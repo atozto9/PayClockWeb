@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
+import { createMemoryStorage } from './domain/persistence'
 
 describe('App', () => {
   it('starts with a default hourly rate of 10,000 won', async () => {
@@ -72,5 +73,58 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: '앱 설치' })).not.toBeInTheDocument()
     })
+  })
+
+  it('shows the selected day premium line instead of the monthly average', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+      window.localStorage.setItem(
+        'payclock:data:v1',
+        JSON.stringify({
+          settings: {
+            hourlyRate: 100,
+            premiumThresholdHours: 14,
+            refreshIntervalSeconds: 1,
+          },
+          records: [
+            {
+              id: 'aug-4-work',
+              dayKey: '2026-08-04',
+              status: 'work',
+              startMinute: 9 * 60,
+              endMinute: 18 * 60,
+              endsNextDay: false,
+              lunchBreakOverrideMinutes: null,
+              extraExcludedMinutes: 0,
+              nightPremiumEnabled: false,
+              note: '',
+              isRunning: false,
+            },
+          ],
+        }),
+      )
+
+      render(<App />)
+
+      const card = screen.getByText('1.5배 시작선').closest('article')
+      expect(card).not.toBeNull()
+      expect(within(card as HTMLElement).getByText('9.1시간')).toBeInTheDocument()
+      expect(
+        within(card as HTMLElement).getByText('선택일 기준 · 기본 8.0시간 + 부족분 0.4시간 + 분배 0.7시간'),
+      ).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
   })
 })

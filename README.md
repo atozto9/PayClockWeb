@@ -5,6 +5,8 @@ PayClock의 웹/PWA 버전입니다. Windows 포함 브라우저에서 실행할
 ## 특징
 
 - macOS 앱과 같은 계산 규칙
+- 필수 근무시간 부족분만 남은 유효 근무일에 재분배
+- 추가 기준 시간은 월 전체 유효 근무일수 기준으로 고정 분배
 - 한국 시간 기준 달력/진행 중 계산
 - 기본 시급 `10,000원`
 - JSON/CSV import-export 호환
@@ -25,6 +27,10 @@ npm test
 npm run build
 npm run test:e2e
 ```
+
+## 문서
+
+- 계산 규칙: [docs/calculation-rules.md](docs/calculation-rules.md)
 
 ## 배포
 

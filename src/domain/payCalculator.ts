@@ -77,14 +77,53 @@ export function summarizeMonth(
   const requiredHours = Math.floor(Math.max(0, Math.min(weekdayRequiredHours, weeklyCapRequiredHours) - deductedEightHourDays * 8))
   const maxAllowedHours = Math.floor((52 / 7) * monthLength)
   const effectiveWorkdays = Math.max(0, defaultWorkdays - deductedEightHourDays)
-  const dailyRequiredHours = effectiveWorkdays > 0 ? requiredHours / effectiveWorkdays : 0
-  const dailyPremiumStartHours = effectiveWorkdays > 0
-    ? dailyRequiredHours + normalizedSettings.premiumThresholdHours / effectiveWorkdays
+  const baseDailyRequiredHours = effectiveWorkdays > 0 ? requiredHours / effectiveWorkdays : 0
+  const baseDailyPremiumShareHours = effectiveWorkdays > 0
+    ? normalizedSettings.premiumThresholdHours / effectiveWorkdays
     : 0
+  const baseDailyPremiumStartHours = baseDailyRequiredHours + baseDailyPremiumShareHours
+  const dayContexts = monthDates.map((dayKey) => {
+    const record = normalizedRecords.get(dayKey)
+    const status = record?.status ?? defaultStatusForDay(dayKey)
+    const countsTowardRequiredProgress = countsTowardRequiredProgressForDay(dayKey, status)
 
-  const dayBreakdowns = monthDates.map((dayKey) =>
-    breakdownForDay(dayKey, normalizedRecords.get(dayKey), normalizedSettings, dailyPremiumStartHours, nowTimestamp),
-  )
+    return {
+      dayKey,
+      record,
+      countsTowardRequiredProgress,
+      countsTowardCatchUpDistribution: countsTowardRequiredProgress,
+    }
+  })
+  const remainingCatchUpDayCounts = remainingCatchUpDayCountsFor(dayContexts)
+
+  const dayBreakdowns: DayPayBreakdown[] = []
+  let actualWorkedBeforeHours = 0
+  let completedRequiredProgressDays = 0
+
+  for (const [index, context] of dayContexts.entries()) {
+    const expectedRequiredBeforeHours = baseDailyRequiredHours * completedRequiredProgressDays
+    const requiredShortfallBeforeHours = Math.max(0, expectedRequiredBeforeHours - actualWorkedBeforeHours)
+    const catchUpPerRemainingDayHours = remainingCatchUpDayCounts[index] > 0
+      ? requiredShortfallBeforeHours / remainingCatchUpDayCounts[index]
+      : 0
+    const requiredHoursForDay = baseDailyRequiredHours + catchUpPerRemainingDayHours
+    const premiumStartHoursForDay = requiredHoursForDay + baseDailyPremiumShareHours
+    const breakdown = breakdownForDay(
+      context.dayKey,
+      context.record,
+      normalizedSettings,
+      requiredHoursForDay,
+      premiumStartHoursForDay,
+      nowTimestamp,
+    )
+
+    dayBreakdowns.push(breakdown)
+    actualWorkedBeforeHours += breakdown.netWorkedSeconds / 3_600
+
+    if (context.countsTowardRequiredProgress) {
+      completedRequiredProgressDays += 1
+    }
+  }
 
   const totalNetWorkedHours = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.netWorkedSeconds / 3_600, 0)
   const totalPremiumOvertimeHours = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.premiumOvertimeSeconds / 3_600, 0)
@@ -101,8 +140,8 @@ export function summarizeMonth(
     effectiveWorkdays,
     requiredHours,
     maxAllowedHours,
-    dailyRequiredHours,
-    dailyPremiumStartHours,
+    baseDailyRequiredHours,
+    baseDailyPremiumStartHours,
     totalNetWorkedHours,
     totalRegularOvertimeHours: 0,
     totalPremiumOvertimeHours,
@@ -116,7 +155,8 @@ export function breakdownForDay(
   dayKey: string,
   record: DayRecord | undefined,
   settings: AppSettings,
-  dailyPremiumStartHours: number,
+  requiredHoursForDay: number,
+  premiumStartHoursForDay: number,
   nowTimestamp = currentKoreanTimestamp(),
 ): DayPayBreakdown {
   const holidayName = holidayNameForDayKey(dayKey)
@@ -125,7 +165,7 @@ export function breakdownForDay(
   const status = normalizedRecord.status
 
   if (status !== 'work' || normalizedRecord.startMinute === null) {
-    return emptyBreakdown(dayKey, status, holidayName)
+    return emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay)
   }
 
   const shiftStartTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.startMinute)
@@ -133,7 +173,7 @@ export function breakdownForDay(
     shiftStartTimestamp,
     normalizedRecord.lunchBreakOverrideMinutes,
     normalizedRecord.extraExcludedMinutes,
-    dailyPremiumStartHours,
+    premiumStartHoursForDay,
   )
 
   let shiftEndTimestamp: number | null = null
@@ -145,7 +185,7 @@ export function breakdownForDay(
 
   if (shiftEndTimestamp === null || shiftEndTimestamp <= shiftStartTimestamp) {
     return {
-      ...emptyBreakdown(dayKey, status, holidayName),
+      ...emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay),
       lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
       extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
       premiumStartTimestamp: estimatedPremiumStartTimestamp,
@@ -159,7 +199,7 @@ export function breakdownForDay(
   const excludedSeconds = Math.min(totalExcludedSeconds, grossWorkedSeconds)
   const effectiveStartTimestamp = shiftStartTimestamp + excludedSeconds * 1_000
   const netWorkedSeconds = Math.max(0, (shiftEndTimestamp - effectiveStartTimestamp) / 1_000)
-  const premiumOvertimeStartTimestamp = effectiveStartTimestamp + Math.max(0, dailyPremiumStartHours) * 3_600 * 1_000
+  const premiumOvertimeStartTimestamp = effectiveStartTimestamp + Math.max(0, premiumStartHoursForDay) * 3_600 * 1_000
   const premiumOvertimeSeconds = overlapSeconds(
     effectiveStartTimestamp,
     shiftEndTimestamp,
@@ -187,6 +227,8 @@ export function breakdownForDay(
     dayKey,
     status,
     holidayName,
+    requiredHoursForDay,
+    premiumStartHoursForDay,
     grossWorkedSeconds,
     autoBreakMinutes,
     lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
@@ -218,9 +260,9 @@ function premiumStartTimestamp(
   shiftStartTimestamp: number,
   lunchBreakOverrideMinutes: number | null,
   extraExcludedMinutes: number,
-  dailyPremiumStartHours: number,
+  premiumStartHoursForDay: number,
 ): number {
-  const baseMinutes = Math.max(0, dailyPremiumStartHours * 60 + Math.max(0, extraExcludedMinutes))
+  const baseMinutes = Math.max(0, premiumStartHoursForDay * 60 + Math.max(0, extraExcludedMinutes))
   const lunchBreakMinutes = lunchBreakOverrideMinutes ?? automaticLunchBreakMinutesForTargetBoundary(baseMinutes)
   return shiftStartTimestamp + (baseMinutes + lunchBreakMinutes) * 60 * 1_000
 }
@@ -250,11 +292,39 @@ function overlapSeconds(
   return Math.max(0, (end - start) / 1_000)
 }
 
-function emptyBreakdown(dayKey: string, status: DayStatus, holidayName: string | null): DayPayBreakdown {
+function countsTowardRequiredProgressForDay(dayKey: string, status: DayStatus): boolean {
+  return isWeekday(dayKey) && !isHolidayDay(dayKey) && status === 'work'
+}
+
+function remainingCatchUpDayCountsFor(
+  dayContexts: Array<{ countsTowardCatchUpDistribution: boolean }>,
+): number[] {
+  const remainingCounts = Array.from({ length: dayContexts.length }, () => 0)
+  let runningCount = 0
+
+  for (let index = dayContexts.length - 1; index >= 0; index -= 1) {
+    if (dayContexts[index].countsTowardCatchUpDistribution) {
+      runningCount += 1
+    }
+    remainingCounts[index] = runningCount
+  }
+
+  return remainingCounts
+}
+
+function emptyBreakdown(
+  dayKey: string,
+  status: DayStatus,
+  holidayName: string | null,
+  requiredHoursForDay = 0,
+  premiumStartHoursForDay = 0,
+): DayPayBreakdown {
   return {
     dayKey,
     status,
     holidayName,
+    requiredHoursForDay,
+    premiumStartHoursForDay,
     grossWorkedSeconds: 0,
     autoBreakMinutes: 0,
     lunchBreakIsAutomatic: true,
