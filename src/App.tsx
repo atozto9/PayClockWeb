@@ -246,7 +246,7 @@ function App() {
         <section className="surface settings-surface">
           <SectionHeader
             title="설정"
-            subtitle={isSettingsExpanded ? '민감한 값은 필요할 때만 열어 확인합니다' : '민감한 값 숨김'}
+            subtitle={isSettingsExpanded ? '민감한 값은 필요할 때만 열어 확인합니다' : ''}
             action={
               <button
                 type="button"
