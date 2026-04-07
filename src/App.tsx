@@ -133,7 +133,7 @@ function App() {
             </article>
             <article className="live-card__stat">
               <span>Premium line</span>
-              <strong>{hours(model.liveBreakdown.premiumStartHoursForDay)}</strong>
+              <strong>{premiumStartDisplayValue(selectedBreakdown)}</strong>
             </article>
           </div>
         </section>
@@ -173,7 +173,7 @@ function App() {
             />
             <SummaryCard
               title="1.5배 시작선"
-              value={hours(selectedBreakdown.premiumStartHoursForDay)}
+              value={premiumStartDisplayValue(selectedBreakdown)}
               subtitle={premiumStartSummarySubtitle(selectedBreakdown, model.monthSummary)}
             />
             <SummaryCard
@@ -626,10 +626,22 @@ function premiumStartSummarySubtitle(
   breakdown: DayPayBreakdown,
   summary: ReturnType<typeof useAppModel>['monthSummary'],
 ): string {
+  if (breakdown.status !== 'work') {
+    return `${dayStatusDisplayName[breakdown.status]} · 근무 상태에서만 계산됩니다`
+  }
+
   const catchUpHours = Math.max(0, breakdown.requiredHoursForDay - summary.baseDailyRequiredHours)
   const premiumShareHours = Math.max(0, breakdown.premiumStartHoursForDay - breakdown.requiredHoursForDay)
 
   return `선택일 기준 · 기본 ${hours(summary.baseDailyRequiredHours)} + 부족분 ${hours(catchUpHours)} + 분배 ${hours(premiumShareHours)}`
+}
+
+function premiumStartDisplayValue(breakdown: DayPayBreakdown): string {
+  if (breakdown.status !== 'work') {
+    return '적용 안 함'
+  }
+
+  return hours(breakdown.premiumStartHoursForDay)
 }
 
 function captionForBreakdown(breakdown: DayPayBreakdown): string {
