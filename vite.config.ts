@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['payclock-icon.svg'],
+      includeAssets: ['payclock-icon.svg', 'payclock-icon-192.png', 'payclock-icon-512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'PayClock Web',
         short_name: 'PayClock',
@@ -22,6 +22,18 @@ export default defineConfig({
         start_url: base,
         lang: 'ko',
         icons: [
+          {
+            src: `${base}payclock-icon-192.png`,
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+          {
+            src: `${base}payclock-icon-512.png`,
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
           {
             src: `${base}payclock-icon.svg`,
             sizes: 'any',
