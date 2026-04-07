@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import './App.css'
 import {
   clockText,
@@ -12,6 +12,7 @@ import {
   premiumStartText,
   wholeHours,
 } from './app/formatters'
+import { useInstallPrompt } from './app/useInstallPrompt'
 import { useAppModel } from './app/useAppModel'
 import { automaticLunchBreakMinutes } from './domain/payCalculator'
 import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord } from './domain/models'
@@ -27,10 +28,13 @@ const quickExcludedValues = [0, 30, 60, 90]
 
 function App() {
   const model = useAppModel()
+  const installPrompt = useInstallPrompt()
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false)
   const dates = datesInMonth(model.selectedMonth)
   const selectedRecord = model.recordFor(model.selectedDate)
   const selectedBreakdown = model.dayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
+  const selectedStatusLabel = dayStatusDisplayName[selectedRecord.status]
 
   function patchSelectedRecord(patch: Partial<DayRecord>) {
     model.updateRecord({
@@ -57,30 +61,81 @@ function App() {
       <div className="background-grid" aria-hidden="true" />
       <header className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">PAYCLOCK WEB</p>
-          <h1>Windows에서도 같은 계산 규칙으로 쓰는 초과수당 계산기</h1>
+          <div className="hero-meta-row" aria-label="핵심 특징">
+            <span className="meta-pill meta-pill--accent">Local-first</span>
+            <span className="meta-pill">KST calendar</span>
+            <span className="meta-pill">JSON / CSV</span>
+          </div>
+          <h1>PayClock</h1>
           <p className="hero-description">
-            모든 데이터는 브라우저 안에만 저장됩니다. 기본 시급은 10,000원으로 시작하고, JSON/CSV는 기존 macOS 앱과 바로 호환됩니다.
+            월별 근무 기록과 추가수당 계산을 한 화면에서 정리합니다. 데이터는 이 브라우저에만 저장됩니다.
           </p>
+          <div className="hero-highlights">
+            <article className="hero-highlight">
+              <span>This month</span>
+              <strong>{currency(model.monthSummary.totalPay)}</strong>
+              <p>{hours(model.monthSummary.totalPremiumOvertimeHours)} 1.5배 대상</p>
+            </article>
+            <article className="hero-highlight">
+              <span>Required</span>
+              <strong>{wholeHours(model.monthSummary.requiredHours)}</strong>
+              <p>{requiredHoursSubtitle(model.monthSummary)}</p>
+            </article>
+            <article className="hero-highlight">
+              <span>Storage</span>
+              <strong>Local only</strong>
+              <p>JSON / CSV 백업</p>
+            </article>
+          </div>
           <div className="hero-actions">
             <button type="button" className="primary-button" onClick={openImportPicker}>
               데이터 불러오기
             </button>
+            {installPrompt.canInstall ? (
+              <button type="button" className="ghost-button ghost-button--install" onClick={() => void installPrompt.installApp()}>
+                앱 설치
+              </button>
+            ) : null}
             <button type="button" className="ghost-button" onClick={model.goToToday}>
               오늘로 이동
             </button>
-            <span className="install-chip">PWA 설치 가능</span>
           </div>
         </div>
 
         <section className="live-card" aria-label="실시간 추가 금액">
-          <p className="live-card__label">실시간 추가 금액</p>
-          <strong className="live-card__value" data-testid="live-pay">
-            {currency(model.liveBreakdown.totalPay)}
-          </strong>
+          <div className="live-card__header">
+            <div>
+              <p className="live-card__label">Live tally</p>
+              <strong className="live-card__value" data-testid="live-pay">
+                {currency(model.liveBreakdown.totalPay)}
+              </strong>
+            </div>
+            <span className={`live-card__badge ${model.liveBreakdown.isLive ? 'is-live' : ''}`}>
+              {model.liveBreakdown.isLive ? 'Tracking now' : 'Today snapshot'}
+            </span>
+          </div>
           <p className="live-card__subtext">
-            {model.liveBreakdown.isLive ? '현재 진행 중인 근무를 반영 중입니다.' : '오늘 기준 추가 금액입니다.'}
+            {model.liveBreakdown.isLive
+              ? '실시간 진행 중인 근무를 반영해 추가 금액을 계속 갱신합니다.'
+              : '오늘 기준 추가 금액을 빠르게 확인할 수 있습니다.'}
           </p>
+          <p className="live-card__context">
+            {dayLabel(model.selectedDate)} · {selectedRecord.isRunning ? '실시간 진행 중' : selectedStatusLabel}
+          </p>
+          <div className="live-card__stats">
+            <article className="live-card__stat">
+              <span>This month</span>
+              <strong>{currency(model.monthSummary.totalPay)}</strong>
+            </article>
+            <article className="live-card__stat">
+              <span>Selected pay</span>
+              <strong>{currency(selectedBreakdown.totalPay)}</strong>
+            </article>
+            <article className="live-card__stat">
+              <span>Premium line</span>
+              <strong>{hours(model.monthSummary.dailyPremiumStartHours)}</strong>
+            </article>
+          </div>
         </section>
       </header>
 
@@ -189,44 +244,62 @@ function App() {
         </section>
 
         <section className="surface settings-surface">
-          <SectionHeader title="설정" subtitle="웹 기본 시급은 10,000원으로 시작합니다" />
-          <div className="field-grid">
-            <label className="field">
-              <span>시급</span>
-              <input
-                type="number"
-                min={0}
-                aria-label="시급"
-                value={model.data.settings.hourlyRate}
-                onChange={(event) => model.setHourlyRate(Number(event.target.value || 0))}
-              />
-            </label>
+          <SectionHeader
+            title="설정"
+            subtitle={isSettingsExpanded ? '민감한 값은 필요할 때만 열어 확인합니다' : '민감한 값 숨김'}
+            action={
+              <button
+                type="button"
+                className="chip-button"
+                aria-expanded={isSettingsExpanded}
+                aria-controls="settings-content"
+                onClick={() => setIsSettingsExpanded((current) => !current)}
+              >
+                {isSettingsExpanded ? '설정 숨기기' : '설정 보기'}
+              </button>
+            }
+          />
+          {isSettingsExpanded ? (
+            <div id="settings-content">
+              <div className="field-grid">
+                <label className="field">
+                  <span>시급</span>
+                  <input
+                    type="number"
+                    min={0}
+                    aria-label="시급"
+                    value={model.data.settings.hourlyRate}
+                    onChange={(event) => model.setHourlyRate(Number(event.target.value || 0))}
+                  />
+                </label>
 
-            <label className="field">
-              <span>1.5배 기준 추가 시간</span>
-              <input
-                type="number"
-                min={0}
-                step="0.1"
-                aria-label="1.5배 기준 추가 시간"
-                value={model.data.settings.premiumThresholdHours}
-                onChange={(event) => model.setPremiumThresholdHours(Number(event.target.value || 0))}
-              />
-            </label>
-          </div>
+                <label className="field">
+                  <span>1.5배 기준 추가 시간</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    aria-label="1.5배 기준 추가 시간"
+                    value={model.data.settings.premiumThresholdHours}
+                    onChange={(event) => model.setPremiumThresholdHours(Number(event.target.value || 0))}
+                  />
+                </label>
+              </div>
 
-          <div className="field-grid">
-            <label className="field">
-              <span>실시간 갱신 주기(초)</span>
-              <input
-                type="number"
-                min={1}
-                aria-label="실시간 갱신 주기"
-                value={model.data.settings.refreshIntervalSeconds}
-                onChange={(event) => model.setRefreshIntervalSeconds(Number(event.target.value || 1))}
-              />
-            </label>
-          </div>
+              <div className="field-grid">
+                <label className="field">
+                  <span>실시간 갱신 주기(초)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label="실시간 갱신 주기"
+                    value={model.data.settings.refreshIntervalSeconds}
+                    onChange={(event) => model.setRefreshIntervalSeconds(Number(event.target.value || 1))}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="surface editor-surface">
@@ -500,11 +573,14 @@ function App() {
   )
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function SectionHeader({ title, subtitle, action }: { title: string; subtitle: string; action?: ReactNode }) {
   return (
     <div className="section-header">
-      <h2>{title}</h2>
-      <p>{subtitle}</p>
+      <div className="section-header__text">
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+      {action ? <div className="section-header__actions">{action}</div> : null}
     </div>
   )
 }
@@ -512,9 +588,9 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
 function SummaryCard({ title, value, subtitle }: { title: string; value: string; subtitle: string }) {
   return (
     <article className="summary-card">
-      <p>{title}</p>
-      <strong>{value}</strong>
-      <span>{subtitle}</span>
+      <p className="summary-card__title">{title}</p>
+      <strong className="summary-card__value">{value}</strong>
+      <span className="summary-card__subtitle">{subtitle}</span>
     </article>
   )
 }
@@ -522,8 +598,8 @@ function SummaryCard({ title, value, subtitle }: { title: string; value: string;
 function MetricCard({ title, value }: { title: string; value: string }) {
   return (
     <article className="metric-card">
-      <p>{title}</p>
-      <strong>{value}</strong>
+      <p className="metric-card__title">{title}</p>
+      <strong className="metric-card__value">{value}</strong>
     </article>
   )
 }

@@ -1,17 +1,18 @@
 :root {
-  --page-bg: #f4efe8;
-  --surface: rgba(252, 249, 245, 0.88);
-  --surface-soft: rgba(255, 255, 255, 0.78);
-  --text-strong: #122431;
-  --text-muted: #36505f;
-  --text-subtle: #627986;
-  --accent: #0c8da0;
-  --accent-strong: #05636f;
-  --border-soft: rgba(18, 36, 49, 0.08);
-  --border-strong: rgba(18, 36, 49, 0.12);
+  --page-bg: #efe4d3;
+  --surface: rgba(250, 244, 236, 0.96);
+  --surface-soft: rgba(255, 251, 245, 0.94);
+  --text-strong: #182834;
+  --text-muted: #4c5f6b;
+  --text-subtle: #6b7c86;
+  --accent: #0e8b93;
+  --accent-strong: #0b5d67;
+  --accent-warm: #b86434;
+  --border-soft: rgba(24, 40, 52, 0.08);
+  --border-strong: rgba(24, 40, 52, 0.14);
   --shadow-soft:
-    0 20px 50px rgba(18, 36, 49, 0.09),
-    0 6px 18px rgba(18, 36, 49, 0.05);
+    0 24px 56px rgba(24, 40, 52, 0.11),
+    0 8px 20px rgba(24, 40, 52, 0.05);
   --font-sans:
     'SUIT Variable',
     'Pretendard Variable',
@@ -19,6 +20,7 @@
     'Noto Sans KR',
     sans-serif;
   --font-display:
+    'IBM Plex Sans',
     'IBM Plex Sans KR',
     'SUIT Variable',
     'Apple SD Gothic Neo',
@@ -44,6 +46,9 @@ body,
 
 body {
   margin: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 242, 0.7), rgba(239, 228, 211, 0.96)),
+    var(--page-bg);
 }
 
 button,
@@ -61,9 +66,9 @@ h3 {
 }
 
 h1 {
-  font-size: clamp(2.3rem, 4vw, 4.4rem);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  font-size: clamp(2.8rem, 6vw, 5.4rem);
+  line-height: 0.92;
+  letter-spacing: -0.06em;
 }
 
 p {
