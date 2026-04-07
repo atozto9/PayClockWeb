@@ -1,0 +1,75 @@
+:root {
+  --page-bg: #f4efe8;
+  --surface: rgba(252, 249, 245, 0.88);
+  --surface-soft: rgba(255, 255, 255, 0.78);
+  --text-strong: #122431;
+  --text-muted: #36505f;
+  --text-subtle: #627986;
+  --accent: #0c8da0;
+  --accent-strong: #05636f;
+  --border-soft: rgba(18, 36, 49, 0.08);
+  --border-strong: rgba(18, 36, 49, 0.12);
+  --shadow-soft:
+    0 20px 50px rgba(18, 36, 49, 0.09),
+    0 6px 18px rgba(18, 36, 49, 0.05);
+  --font-sans:
+    'SUIT Variable',
+    'Pretendard Variable',
+    'Apple SD Gothic Neo',
+    'Noto Sans KR',
+    sans-serif;
+  --font-display:
+    'IBM Plex Sans KR',
+    'SUIT Variable',
+    'Apple SD Gothic Neo',
+    sans-serif;
+  color: var(--text-strong);
+  background: var(--page-bg);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  color: var(--text-strong);
+}
+
+h1 {
+  font-size: clamp(2.3rem, 4vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+p {
+  line-height: 1.6;
+}
+
+a {
+  color: inherit;
+}
