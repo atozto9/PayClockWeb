@@ -59,6 +59,8 @@ export interface DayPayBreakdown {
   dayKey: string
   status: DayStatus
   holidayName: string | null
+  requiredHoursForDay: number
+  premiumStartHoursForDay: number
   grossWorkedSeconds: number
   autoBreakMinutes: number
   lunchBreakIsAutomatic: boolean
@@ -86,8 +88,8 @@ export interface MonthSummary {
   effectiveWorkdays: number
   requiredHours: number
   maxAllowedHours: number
-  dailyRequiredHours: number
-  dailyPremiumStartHours: number
+  baseDailyRequiredHours: number
+  baseDailyPremiumStartHours: number
   totalNetWorkedHours: number
   totalRegularOvertimeHours: number
   totalPremiumOvertimeHours: number

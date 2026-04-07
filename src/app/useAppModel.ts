@@ -54,7 +54,7 @@ export function useAppModel() {
     }, Math.max(1, data.settings.refreshIntervalSeconds) * 1_000)
 
     return () => window.clearInterval(interval)
-  }, [activeRunningDayKey, data.settings.refreshIntervalSeconds, refreshNow])
+  }, [activeRunningDayKey, data.settings.refreshIntervalSeconds])
 
   function summaryForMonth(monthDayKey: string) {
     return summarizeMonth(monthDayKey, data.records, data.settings, nowTimestamp)
@@ -62,7 +62,7 @@ export function useAppModel() {
 
   function breakdownForDate(dayKey: string): DayPayBreakdown {
     const summary = summaryForMonth(startOfMonth(dayKey))
-    return summary.days.find((day) => day.dayKey === dayKey) ?? breakdownForDay(dayKey, undefined, data.settings, 0, nowTimestamp)
+    return summary.days.find((day) => day.dayKey === dayKey) ?? breakdownForDay(dayKey, undefined, data.settings, 0, 0, nowTimestamp)
   }
 
   function liveBreakdown(): DayPayBreakdown {

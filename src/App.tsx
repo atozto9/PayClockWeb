@@ -133,7 +133,7 @@ function App() {
             </article>
             <article className="live-card__stat">
               <span>Premium line</span>
-              <strong>{hours(model.monthSummary.dailyPremiumStartHours)}</strong>
+              <strong>{premiumStartDisplayValue(selectedBreakdown)}</strong>
             </article>
           </div>
         </section>
@@ -173,8 +173,8 @@ function App() {
             />
             <SummaryCard
               title="1.5배 시작선"
-              value={hours(model.monthSummary.dailyPremiumStartHours)}
-              subtitle={`일 필수 ${hours(model.monthSummary.dailyRequiredHours)} + 분배 ${hours(Math.max(0, model.monthSummary.dailyPremiumStartHours - model.monthSummary.dailyRequiredHours))}`}
+              value={premiumStartDisplayValue(selectedBreakdown)}
+              subtitle={premiumStartSummarySubtitle(selectedBreakdown, model.monthSummary)}
             />
             <SummaryCard
               title="총 실근무"
@@ -622,6 +622,28 @@ function requiredHoursSubtitle(summary: ReturnType<typeof useAppModel>['monthSum
   return parts.join(' · ')
 }
 
+function premiumStartSummarySubtitle(
+  breakdown: DayPayBreakdown,
+  summary: ReturnType<typeof useAppModel>['monthSummary'],
+): string {
+  if (breakdown.status !== 'work') {
+    return `${dayStatusDisplayName[breakdown.status]} · 근무 상태에서만 계산됩니다`
+  }
+
+  const catchUpHours = Math.max(0, breakdown.requiredHoursForDay - summary.baseDailyRequiredHours)
+  const premiumShareHours = Math.max(0, breakdown.premiumStartHoursForDay - breakdown.requiredHoursForDay)
+
+  return `선택일 기준 · 기본 ${hours(summary.baseDailyRequiredHours)} + 부족분 ${hours(catchUpHours)} + 분배 ${hours(premiumShareHours)}`
+}
+
+function premiumStartDisplayValue(breakdown: DayPayBreakdown): string {
+  if (breakdown.status !== 'work') {
+    return '적용 안 함'
+  }
+
+  return hours(breakdown.premiumStartHoursForDay)
+}
+
 function captionForBreakdown(breakdown: DayPayBreakdown): string {
   switch (breakdown.status) {
     case 'work':
@@ -694,6 +716,8 @@ function emptyBreakdown(dayKey: string, status: DayPayBreakdown['status']): DayP
     dayKey,
     status,
     holidayName: null,
+    requiredHoursForDay: 0,
+    premiumStartHoursForDay: 0,
     grossWorkedSeconds: 0,
     autoBreakMinutes: 0,
     lunchBreakIsAutomatic: true,
