@@ -779,9 +779,15 @@ function TodayTimeline({ timeline }: { timeline: ShiftTimeline }) {
         <div className="shift-timeline__rail">
           {timeline.markers.map((marker) => (
             <span
-              key={marker.label}
-              className={`shift-timeline__marker shift-timeline__marker--${marker.tone}`}
+              key={`${marker.label}-${marker.position}`}
+              className={[
+                'shift-timeline__marker',
+                `shift-timeline__marker--${marker.tone}`,
+                `shift-timeline__marker--${marker.shape}`,
+                `shift-timeline__marker--align-${marker.align}`,
+              ].join(' ')}
               style={{ left: `${marker.position}%` }}
+              title={marker.label}
             />
           ))}
         </div>
@@ -1024,7 +1030,9 @@ interface ShiftTimeline {
   markers: Array<{
     label: string
     position: number
-    tone: 'start' | 'premium' | 'night' | 'end'
+    tone: 'start' | 'premium' | 'night' | 'current' | 'end'
+    shape: 'dot' | 'bar'
+    align: 'start' | 'center' | 'end'
   }>
 }
 
@@ -1045,24 +1053,32 @@ function timelineForRecord(record: DayRecord, breakdown: DayPayBreakdown, nowTim
       label: `시작 ${clockText(record.startMinute)}`,
       position: 0,
       tone: 'start',
+      shape: 'bar',
+      align: 'start',
     },
   ]
 
   if (breakdown.premiumStartTimestamp !== null) {
+    const position = clampPercent(((breakdown.premiumStartTimestamp - shiftStartTimestamp) / totalSpan) * 100)
     markers.push({
       label: `추가수당 ${premiumStartText(breakdown.premiumStartTimestamp, record.dayKey)}`,
-      position: clampPercent(((breakdown.premiumStartTimestamp - shiftStartTimestamp) / totalSpan) * 100),
+      position,
       tone: 'premium',
+      shape: 'dot',
+      align: markerAlignForPosition(position),
     })
   }
 
   if (record.nightPremiumEnabled) {
     const nightTimestamp = combineDayAndMinutes(record.dayKey, 22 * 60)
     if (nightTimestamp >= shiftStartTimestamp && nightTimestamp <= shiftEndTimestamp) {
+      const position = clampPercent(((nightTimestamp - shiftStartTimestamp) / totalSpan) * 100)
       markers.push({
         label: '22:00 이후 가산',
-        position: clampPercent(((nightTimestamp - shiftStartTimestamp) / totalSpan) * 100),
+        position,
         tone: 'night',
+        shape: 'dot',
+        align: markerAlignForPosition(position),
       })
     }
   }
@@ -1070,7 +1086,9 @@ function timelineForRecord(record: DayRecord, breakdown: DayPayBreakdown, nowTim
   markers.push({
     label: `${record.isRunning ? '현재' : '종료'} ${clockText(minutesForTimestampLabel(shiftEndTimestamp))}`,
     position: 100,
-    tone: 'end',
+    tone: record.isRunning ? 'current' : 'end',
+    shape: 'bar',
+    align: 'end',
   })
 
   return {
@@ -1107,6 +1125,17 @@ function minutesForTimestampLabel(timestamp: number): number {
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value))
+}
+
+function markerAlignForPosition(position: number): 'start' | 'center' | 'end' {
+  if (position <= 0) {
+    return 'start'
+  }
+  if (position >= 100) {
+    return 'end'
+  }
+
+  return 'center'
 }
 
 function useMediaQuery(query: string) {

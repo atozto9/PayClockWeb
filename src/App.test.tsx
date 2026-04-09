@@ -321,6 +321,57 @@ describe('App', () => {
       vi.useRealTimers()
     }
   })
+
+  it('renders the running-time marker as a bar in the overtime timeline', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T03:30:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+      window.localStorage.setItem(
+        'payclock:data:v1',
+        JSON.stringify({
+          settings: {
+            hourlyRate: 100,
+            premiumThresholdHours: 14,
+            refreshIntervalSeconds: 1,
+          },
+          records: [
+            {
+              id: 'aug-4-running',
+              dayKey: '2026-08-04',
+              status: 'work',
+              startMinute: 9 * 60,
+              endMinute: null,
+              endsNextDay: false,
+              lunchBreakOverrideMinutes: null,
+              extraExcludedMinutes: 0,
+              nightPremiumEnabled: true,
+              note: '',
+              isRunning: true,
+            },
+          ],
+        }),
+      )
+
+      render(<App />)
+
+      const currentMarker = screen.getByTitle('현재 12:30')
+      expect(currentMarker).toHaveClass('shift-timeline__marker--current')
+      expect(currentMarker).toHaveClass('shift-timeline__marker--bar')
+      expect(currentMarker).toHaveClass('shift-timeline__marker--align-end')
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
+  })
 })
 
 function summaryCardValue(title: string): string {

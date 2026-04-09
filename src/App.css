@@ -520,18 +520,43 @@
       rgba(184, 100, 52, 0.28) 100%
     );
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .shift-timeline__marker {
   position: absolute;
   top: 50%;
-  width: 16px;
-  height: 16px;
+  z-index: 1;
+}
+
+.shift-timeline__marker--dot {
+  width: 14px;
+  height: 14px;
   border-radius: 999px;
   border: 2px solid rgba(16, 31, 40, 0.84);
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05);
+}
+
+.shift-timeline__marker--bar {
+  width: 6px;
+  height: 30px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 31, 40, 0.84);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.05),
+    0 6px 18px rgba(9, 24, 31, 0.24);
+}
+
+.shift-timeline__marker--align-start {
+  transform: translateY(-50%);
+}
+
+.shift-timeline__marker--align-center {
   transform: translate(-50%, -50%);
+}
+
+.shift-timeline__marker--align-end {
+  transform: translate(-100%, -50%);
 }
 
 .shift-timeline__marker--start {
@@ -546,8 +571,12 @@
   background: #f59e0b;
 }
 
-.shift-timeline__marker--end {
+.shift-timeline__marker--current {
   background: #fef8ef;
+}
+
+.shift-timeline__marker--end {
+  background: rgba(247, 240, 232, 0.78);
 }
 
 .shift-timeline__labels,
@@ -592,6 +621,13 @@
   background: currentColor;
 }
 
+.timeline-legend--current::before,
+.timeline-legend--end::before {
+  width: 4px;
+  height: 14px;
+  border-radius: 3px;
+}
+
 .timeline-legend--start {
   background: rgba(125, 211, 216, 0.16);
   color: #d6fbff;
@@ -605,6 +641,11 @@
 .timeline-legend--night {
   background: rgba(245, 158, 11, 0.16);
   color: #ffdf98;
+}
+
+.timeline-legend--current {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fef8ef;
 }
 
 .timeline-legend--end {
@@ -1181,7 +1222,26 @@
 
   .shift-timeline__marker {
     border-color: #fff8f0;
+  }
+
+  .shift-timeline__marker--dot {
     box-shadow: 0 0 0 4px rgba(246, 239, 228, 0.96);
+  }
+
+  .shift-timeline__marker--bar {
+    border-color: rgba(32, 53, 67, 0.18);
+    box-shadow:
+      0 0 0 4px rgba(246, 239, 228, 0.96),
+      0 5px 14px rgba(24, 40, 52, 0.12);
+  }
+
+  .shift-timeline__marker--current {
+    background: #114951;
+    border-color: #dff4f0;
+  }
+
+  .shift-timeline__marker--end {
+    background: #465965;
   }
 
   .timeline-legend {
@@ -1205,6 +1265,12 @@
     background: rgba(245, 158, 11, 0.16);
     border-color: rgba(184, 100, 52, 0.16);
     color: #a45710;
+  }
+
+  .timeline-legend--current {
+    background: rgba(14, 139, 147, 0.12);
+    border-color: rgba(14, 139, 147, 0.16);
+    color: #0b5d67;
   }
 
   .timeline-legend--end {
