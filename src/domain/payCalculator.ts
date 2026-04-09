@@ -95,19 +95,26 @@ export function summarizeMonth(
     }
   })
   const remainingCatchUpDayCounts = remainingCatchUpDayCountsFor(dayContexts)
+  const recommendedReferenceDayKey = recommendedReferenceDayKeyForMonth(monthDates, dayKeyFromTimestamp(nowTimestamp))
+  const recommendedWorkdaysElapsed = recommendedReferenceDayKey === null
+    ? 0
+    : dayContexts.filter((context) => context.countsTowardRequiredProgress && context.dayKey <= recommendedReferenceDayKey).length
+  const recommendedHoursToDate = effectiveWorkdays > 0
+    ? (requiredHours / effectiveWorkdays) * recommendedWorkdaysElapsed
+    : 0
 
   const dayBreakdowns: DayPayBreakdown[] = []
   let actualWorkedBeforeHours = 0
   let completedRequiredProgressDays = 0
 
   for (const [index, context] of dayContexts.entries()) {
-    const expectedRequiredBeforeHours = baseDailyRequiredHours * completedRequiredProgressDays
-    const requiredShortfallBeforeHours = Math.max(0, expectedRequiredBeforeHours - actualWorkedBeforeHours)
-    const catchUpPerRemainingDayHours = remainingCatchUpDayCounts[index] > 0
-      ? requiredShortfallBeforeHours / remainingCatchUpDayCounts[index]
+    const expectedPremiumBeforeHours = baseDailyPremiumStartHours * completedRequiredProgressDays
+    const premiumShortfallBeforeHours = Math.max(0, expectedPremiumBeforeHours - actualWorkedBeforeHours)
+    const carryOverShortfallHoursForDay = remainingCatchUpDayCounts[index] > 0
+      ? premiumShortfallBeforeHours / remainingCatchUpDayCounts[index]
       : 0
-    const requiredHoursForDay = baseDailyRequiredHours + catchUpPerRemainingDayHours
-    const premiumStartHoursForDay = requiredHoursForDay + baseDailyPremiumShareHours
+    const requiredHoursForDay = baseDailyRequiredHours
+    const premiumStartHoursForDay = baseDailyPremiumStartHours + carryOverShortfallHoursForDay
     const breakdown = breakdownForDay(
       context.dayKey,
       context.record,
@@ -115,6 +122,7 @@ export function summarizeMonth(
       requiredHoursForDay,
       premiumStartHoursForDay,
       nowTimestamp,
+      carryOverShortfallHoursForDay,
     )
 
     dayBreakdowns.push(breakdown)
@@ -142,6 +150,8 @@ export function summarizeMonth(
     maxAllowedHours,
     baseDailyRequiredHours,
     baseDailyPremiumStartHours,
+    recommendedWorkdaysElapsed,
+    recommendedHoursToDate,
     totalNetWorkedHours,
     totalRegularOvertimeHours: 0,
     totalPremiumOvertimeHours,
@@ -158,6 +168,7 @@ export function breakdownForDay(
   requiredHoursForDay: number,
   premiumStartHoursForDay: number,
   nowTimestamp = currentKoreanTimestamp(),
+  carryOverShortfallHoursForDay = 0,
 ): DayPayBreakdown {
   const holidayName = holidayNameForDayKey(dayKey)
   const normalizedSettings = normalizeSettings(settings)
@@ -165,7 +176,7 @@ export function breakdownForDay(
   const status = normalizedRecord.status
 
   if (status !== 'work' || normalizedRecord.startMinute === null) {
-    return emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay)
+    return emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay, carryOverShortfallHoursForDay)
   }
 
   const shiftStartTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.startMinute)
@@ -185,7 +196,7 @@ export function breakdownForDay(
 
   if (shiftEndTimestamp === null || shiftEndTimestamp <= shiftStartTimestamp) {
     return {
-      ...emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay),
+      ...emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay, carryOverShortfallHoursForDay),
       lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
       extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
       premiumStartTimestamp: estimatedPremiumStartTimestamp,
@@ -229,6 +240,7 @@ export function breakdownForDay(
     holidayName,
     requiredHoursForDay,
     premiumStartHoursForDay,
+    carryOverShortfallHoursForDay,
     grossWorkedSeconds,
     autoBreakMinutes,
     lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
@@ -318,6 +330,7 @@ function emptyBreakdown(
   holidayName: string | null,
   requiredHoursForDay = 0,
   premiumStartHoursForDay = 0,
+  carryOverShortfallHoursForDay = 0,
 ): DayPayBreakdown {
   return {
     dayKey,
@@ -325,6 +338,7 @@ function emptyBreakdown(
     holidayName,
     requiredHoursForDay,
     premiumStartHoursForDay,
+    carryOverShortfallHoursForDay,
     grossWorkedSeconds: 0,
     autoBreakMinutes: 0,
     lunchBreakIsAutomatic: true,
@@ -344,4 +358,19 @@ function emptyBreakdown(
 
 export function dayKeyForTimestamp(timestamp: number): string {
   return dayKeyFromTimestamp(timestamp)
+}
+
+function recommendedReferenceDayKeyForMonth(monthDates: string[], nowDayKey: string): string | null {
+  const monthStartDayKey = monthDates[0]
+  const monthEndDayKey = monthDates[monthDates.length - 1]
+
+  if (nowDayKey < monthStartDayKey) {
+    return null
+  }
+
+  if (nowDayKey > monthEndDayKey) {
+    return monthEndDayKey
+  }
+
+  return nowDayKey
 }

@@ -114,8 +114,9 @@ describe('App', () => {
       render(<App />)
 
       const initialSummaryValue = summaryCardValue('1.5배 시작선')
-      expect(initialSummaryValue).toBe('9.1시간')
+      expect(initialSummaryValue).toBe('9.2시간')
       expect(liveCardStatValue('Premium line')).toBe(initialSummaryValue)
+      expect(summaryCardValue('총 실근무')).toBe('4.0시간 / 16.0시간')
 
       fireEvent.click(screen.getByTestId('day-cell-2026-08-05'))
 
@@ -123,7 +124,8 @@ describe('App', () => {
       expect(updatedSummaryValue).toBe('9.4시간')
       expect(updatedSummaryValue).not.toBe(initialSummaryValue)
       expect(liveCardStatValue('Premium line')).toBe(updatedSummaryValue)
-      expect(summaryCardSubtitle('1.5배 시작선')).toBe('선택일 기준 · 기본 8.0시간 + 부족분 0.7시간 + 분배 0.7시간')
+      expect(summaryCardSubtitle('1.5배 시작선')).toBe('선택일 기준 · 필수 8.0시간 + 추가 기준 분배 0.7시간 + 이월 0.7시간')
+      expect(summaryCardSubtitle('총 실근무')).toBe('실근무 / 기준일까지 권장근무 · 유효 근무일 2일')
     } finally {
       Object.defineProperty(window, 'localStorage', {
         value: originalLocalStorage,

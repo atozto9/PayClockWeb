@@ -75,11 +75,12 @@ describe('payCalculator', () => {
     expect(summary.baseDailyPremiumStartHours).toBeCloseTo(8.7, 4)
     expect(breakdown?.requiredHoursForDay).toBeCloseTo(8, 4)
     expect(breakdown?.premiumStartHoursForDay).toBeCloseTo(8.7, 4)
+    expect(breakdown?.carryOverShortfallHoursForDay).toBeCloseTo(0, 4)
     expect(breakdown?.premiumOvertimeSeconds).toBeCloseTo(0.8 * 3_600, 3)
     expect(breakdown?.totalPay).toBeCloseTo(120, 3)
   })
 
-  it('redistributes only required-hour shortfall across remaining workdays', () => {
+  it('redistributes premium-target shortfall across remaining workdays', () => {
     const summary = summarizeMonth(
       '2026-08-01',
       [workRecord('2026-08-04', { endMinute: 19 * 60 + 30 })],
@@ -88,9 +89,10 @@ describe('payCalculator', () => {
     )
 
     const breakdown = summary.days.find((day) => day.dayKey === '2026-08-04')
-    expect(breakdown?.requiredHoursForDay).toBeCloseTo(8 + 8 / 19, 4)
-    expect(breakdown?.premiumStartHoursForDay).toBeCloseTo(8 + 8 / 19 + 14 / 20, 4)
-    expect(breakdown?.premiumOvertimeSeconds).toBeCloseTo((9.5 - (8 + 8 / 19 + 14 / 20)) * 3_600, 3)
+    expect(breakdown?.requiredHoursForDay).toBeCloseTo(8, 4)
+    expect(breakdown?.carryOverShortfallHoursForDay).toBeCloseTo(8.7 / 19, 4)
+    expect(breakdown?.premiumStartHoursForDay).toBeCloseTo(8 + 14 / 20 + 8.7 / 19, 4)
+    expect(breakdown?.premiumOvertimeSeconds).toBeCloseTo((9.5 - (8 + 14 / 20 + 8.7 / 19)) * 3_600, 3)
   })
 
   it('does not lower future thresholds below the base line after earlier overtime', () => {
@@ -128,7 +130,7 @@ describe('payCalculator', () => {
     expect(updatedBreakdown?.premiumStartHoursForDay).toBeGreaterThan(baseBreakdown?.premiumStartHoursForDay ?? 0)
   })
 
-  it('can eliminate premium overtime entirely when the required-hour shortfall is large', () => {
+  it('can eliminate premium overtime entirely when the premium-target shortfall is large', () => {
     const summary = summarizeMonth(
       '2026-08-01',
       [workRecord('2026-08-05', { endMinute: 19 * 60 + 30 })],
@@ -150,8 +152,9 @@ describe('payCalculator', () => {
     )
 
     const breakdown = summary.days.find((day) => day.dayKey === '2026-08-04')
-    expect(breakdown?.requiredHoursForDay).toBeCloseTo(8 + 4 / 19, 4)
-    expect(breakdown?.premiumStartHoursForDay).toBeCloseTo(8 + 4 / 19 + 14 / 20, 4)
+    expect(breakdown?.requiredHoursForDay).toBeCloseTo(8, 4)
+    expect(breakdown?.carryOverShortfallHoursForDay).toBeCloseTo(4.7 / 19, 4)
+    expect(breakdown?.premiumStartHoursForDay).toBeCloseTo(8 + 14 / 20 + 4.7 / 19, 4)
   })
 
   it('keeps daily hours at zero when effective workdays are zero', () => {
@@ -168,6 +171,42 @@ describe('payCalculator', () => {
     expect(summary.effectiveWorkdays).toBe(0)
     expect(summary.baseDailyRequiredHours).toBe(0)
     expect(summary.baseDailyPremiumStartHours).toBe(0)
+  })
+
+  it('tracks recommended hours through today for the current month', () => {
+    const summary = summarizeMonth(
+      '2026-08-01',
+      [],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-10', 0),
+    )
+
+    expect(summary.recommendedWorkdaysElapsed).toBe(6)
+    expect(summary.recommendedHoursToDate).toBeCloseTo(48, 4)
+  })
+
+  it('uses the full month as the recommended-hours reference for past months', () => {
+    const summary = summarizeMonth(
+      '2026-07-01',
+      [],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-10', 0),
+    )
+
+    expect(summary.recommendedWorkdaysElapsed).toBe(summary.effectiveWorkdays)
+    expect(summary.recommendedHoursToDate).toBeCloseTo(summary.requiredHours, 4)
+  })
+
+  it('shows zero recommended hours before a future month starts', () => {
+    const summary = summarizeMonth(
+      '2026-09-01',
+      [],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-10', 0),
+    )
+
+    expect(summary.recommendedWorkdaysElapsed).toBe(0)
+    expect(summary.recommendedHoursToDate).toBe(0)
   })
 
   it('does not pay hours between required and premium threshold', () => {

@@ -382,6 +382,8 @@
 
 .summary-card__value {
   font-size: 1.42rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .summary-card__subtitle,

@@ -178,8 +178,8 @@ function App() {
             />
             <SummaryCard
               title="총 실근무"
-              value={hours(model.monthSummary.totalNetWorkedHours)}
-              subtitle="월 누적 실근무"
+              value={workedProgressValue(model.monthSummary)}
+              subtitle={workedProgressSubtitle(model.monthSummary)}
             />
           </div>
           {model.monthSummary.exceedsMonthlyCap ? (
@@ -630,10 +630,10 @@ function premiumStartSummarySubtitle(
     return `${dayStatusDisplayName[breakdown.status]} · 근무 상태에서만 계산됩니다`
   }
 
-  const catchUpHours = Math.max(0, breakdown.requiredHoursForDay - summary.baseDailyRequiredHours)
-  const premiumShareHours = Math.max(0, breakdown.premiumStartHoursForDay - breakdown.requiredHoursForDay)
+  const premiumShareHours = Math.max(0, summary.baseDailyPremiumStartHours - summary.baseDailyRequiredHours)
+  const carryOverHours = Math.max(0, breakdown.carryOverShortfallHoursForDay)
 
-  return `선택일 기준 · 기본 ${hours(summary.baseDailyRequiredHours)} + 부족분 ${hours(catchUpHours)} + 분배 ${hours(premiumShareHours)}`
+  return `선택일 기준 · 필수 ${hours(summary.baseDailyRequiredHours)} + 추가 기준 분배 ${hours(premiumShareHours)} + 이월 ${hours(carryOverHours)}`
 }
 
 function premiumStartDisplayValue(breakdown: DayPayBreakdown): string {
@@ -711,6 +711,14 @@ function recommendedLunchBreakMinutes(record: DayRecord, nowTimestamp: number): 
   return automaticLunchBreakMinutes((shiftEndTimestamp - shiftStartTimestamp) / 1_000)
 }
 
+function workedProgressValue(summary: ReturnType<typeof useAppModel>['monthSummary']): string {
+  return `${hours(summary.totalNetWorkedHours)} / ${hours(summary.recommendedHoursToDate)}`
+}
+
+function workedProgressSubtitle(summary: ReturnType<typeof useAppModel>['monthSummary']): string {
+  return `실근무 / 기준일까지 권장근무 · 유효 근무일 ${summary.recommendedWorkdaysElapsed}일`
+}
+
 function emptyBreakdown(dayKey: string, status: DayPayBreakdown['status']): DayPayBreakdown {
   return {
     dayKey,
@@ -718,6 +726,7 @@ function emptyBreakdown(dayKey: string, status: DayPayBreakdown['status']): DayP
     holidayName: null,
     requiredHoursForDay: 0,
     premiumStartHoursForDay: 0,
+    carryOverShortfallHoursForDay: 0,
     grossWorkedSeconds: 0,
     autoBreakMinutes: 0,
     lunchBreakIsAutomatic: true,
