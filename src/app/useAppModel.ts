@@ -5,6 +5,7 @@ import {
   type AppData,
   type DayPayBreakdown,
   type DayRecord,
+  type PremiumCalculationMode,
   normalizeAppData,
   normalizeDayRecord,
 } from '../domain/models'
@@ -32,11 +33,16 @@ export function useAppModel() {
   const [nowTimestamp, setNowTimestamp] = useState(initialNowTimestampRef.current)
   const [errorMessage, setErrorMessage] = useState<string | null>(messageForLoadStatus(initialLoadResultRef.current.status))
   const [pendingJSONImport, setPendingJSONImport] = useState<AppData | null>(null)
+  const [premiumCalculationMode, setPremiumCalculationMode] = useState<PremiumCalculationMode>('occurrence')
 
   const activeRunningDayKey = data.records.find((record) => record.isRunning)?.dayKey ?? null
   const todayKey = dayKeyFromTimestamp(nowTimestamp)
-  const monthSummary = summarizeMonth(selectedMonth, data.records, data.settings, nowTimestamp)
+  const monthSummary = summarizeMonth(selectedMonth, data.records, data.settings, nowTimestamp, 'occurrence')
+  const displayMonthSummary = premiumCalculationMode === 'occurrence'
+    ? monthSummary
+    : summarizeMonth(selectedMonth, data.records, data.settings, nowTimestamp, premiumCalculationMode)
   const dayMap = new Map(monthSummary.days.map((day) => [day.dayKey, day] as const))
+  const displayDayMap = new Map(displayMonthSummary.days.map((day) => [day.dayKey, day] as const))
 
   const refreshNow = useEffectEvent(() => {
     setNowTimestamp(currentKoreanTimestamp())
@@ -56,13 +62,17 @@ export function useAppModel() {
     return () => window.clearInterval(interval)
   }, [activeRunningDayKey, data.settings.refreshIntervalSeconds])
 
-  function summaryForMonth(monthDayKey: string) {
-    return summarizeMonth(monthDayKey, data.records, data.settings, nowTimestamp)
+  function summaryForMonth(monthDayKey: string, mode: PremiumCalculationMode = 'occurrence') {
+    return summarizeMonth(monthDayKey, data.records, data.settings, nowTimestamp, mode)
   }
 
-  function breakdownForDate(dayKey: string): DayPayBreakdown {
-    const summary = summaryForMonth(startOfMonth(dayKey))
+  function breakdownForDate(dayKey: string, mode: PremiumCalculationMode = 'occurrence'): DayPayBreakdown {
+    const summary = summaryForMonth(startOfMonth(dayKey), mode)
     return summary.days.find((day) => day.dayKey === dayKey) ?? breakdownForDay(dayKey, undefined, data.settings, 0, 0, nowTimestamp)
+  }
+
+  function displayBreakdownForDate(dayKey: string): DayPayBreakdown {
+    return breakdownForDate(dayKey, premiumCalculationMode)
   }
 
   function liveBreakdown(): DayPayBreakdown {
@@ -285,6 +295,9 @@ export function useAppModel() {
     activeRunningDayKey,
     data,
     dayMap,
+    displayBreakdownForDate,
+    displayDayMap,
+    displayMonthSummary,
     errorMessage,
     importFile,
     liveBreakdown: liveBreakdown(),
@@ -307,6 +320,8 @@ export function useAppModel() {
     exportJSON,
     exportCSV,
     clearError,
+    premiumCalculationMode,
+    setPremiumCalculationMode,
     isSelectedDateToday: selectedDate === todayKey,
     todayKey,
   }

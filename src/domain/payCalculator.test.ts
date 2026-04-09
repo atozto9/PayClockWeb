@@ -209,6 +209,63 @@ describe('payCalculator', () => {
     expect(summary.recommendedHoursToDate).toBe(0)
   })
 
+  it('reduces early settlement premium as the month progresses and clears it by month end', () => {
+    const weekdayKeys = weekdayWorkdayKeys('2026-08-01')
+    const records = [
+      tenHourNetWorkdayRecord(weekdayKeys[0]),
+      ...weekdayKeys.slice(1).map((dayKey) => requiredHoursWorkdayRecord(dayKey)),
+    ]
+
+    const earlySummary = summarizeMonth(
+      '2026-08-01',
+      records,
+      makeSettings(),
+      combineDayAndMinutes(weekdayKeys[0], 23 * 60),
+      'settlement',
+    )
+    const midSummary = summarizeMonth(
+      '2026-08-01',
+      records,
+      makeSettings(),
+      combineDayAndMinutes(weekdayKeys[1], 23 * 60),
+      'settlement',
+    )
+    const finalSummary = summarizeMonth(
+      '2026-08-01',
+      records,
+      makeSettings(),
+      combineDayAndMinutes('2026-09-01', 0),
+      'settlement',
+    )
+
+    expect(earlySummary.totalPremiumOvertimeHours).toBeCloseTo(1.3, 3)
+    expect(midSummary.totalPremiumOvertimeHours).toBeCloseTo(0.6, 3)
+    expect(finalSummary.totalPremiumOvertimeHours).toBe(0)
+    expect(finalSummary.totalPay).toBe(0)
+  })
+
+  it('matches the settlement cumulative formula and counts weekend work only in worked totals', () => {
+    const summary = summarizeMonth(
+      '2026-08-01',
+      [
+        workRecord('2026-08-01', { endMinute: 13 * 60 }),
+        tenHourNetWorkdayRecord('2026-08-03'),
+      ],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-04', 0),
+      'settlement',
+    )
+
+    const expectedHours = Math.max(
+      0,
+      summary.totalNetWorkedHours - summary.baseDailyPremiumStartHours * summary.recommendedWorkdaysElapsed,
+    )
+
+    expect(summary.recommendedWorkdaysElapsed).toBe(2)
+    expect(summary.totalNetWorkedHours).toBeCloseTo(14, 3)
+    expect(summary.totalPremiumOvertimeHours).toBeCloseTo(expectedHours, 3)
+  })
+
   it('does not pay hours between required and premium threshold', () => {
     const summary = summarizeMonth(
       '2026-08-01',
@@ -240,6 +297,48 @@ describe('payCalculator', () => {
     expect(breakdown?.premiumOvertimePay).toBeCloseTo(120, 3)
     expect(breakdown?.nightPremiumPay).toBeCloseTo(40, 3)
     expect(breakdown?.totalPay).toBeCloseTo(160, 3)
+    expect(summary.totalNightPremiumHours).toBeCloseTo(0.8, 3)
+  })
+
+  it('preserves settlement night premium even when later daytime premium absorbs the remaining total', () => {
+    const summary = summarizeMonth(
+      '2026-08-01',
+      [
+        workRecord('2026-08-03', {
+          startMinute: 13 * 60,
+          endMinute: 23 * 60 + 30,
+          nightPremiumEnabled: true,
+        }),
+        tenHourNetWorkdayRecord('2026-08-04'),
+      ],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-04', 23 * 60),
+      'settlement',
+    )
+
+    const firstDay = summary.days.find((day) => day.dayKey === '2026-08-03')
+    const secondDay = summary.days.find((day) => day.dayKey === '2026-08-04')
+
+    expect(summary.totalPremiumOvertimeHours).toBeCloseTo(2.1, 3)
+    expect(summary.totalNightPremiumHours).toBeCloseTo(1.5, 3)
+    expect(firstDay?.nightPremiumSeconds).toBeCloseTo(1.5 * 3_600, 3)
+    expect(firstDay?.premiumOvertimeSeconds).toBeCloseTo(1.5 * 3_600, 3)
+    expect(secondDay?.premiumOvertimeSeconds).toBeCloseTo(0.6 * 3_600, 3)
+  })
+
+  it('marks future-month settlement days as outside the premium reference', () => {
+    const summary = summarizeMonth(
+      '2026-09-01',
+      [tenHourNetWorkdayRecord('2026-09-01')],
+      makeSettings(),
+      combineDayAndMinutes('2026-08-10', 0),
+      'settlement',
+    )
+
+    expect(summary.totalPremiumOvertimeHours).toBe(0)
+    expect(summary.totalNightPremiumHours).toBe(0)
+    expect(summary.premiumReferenceDayKey).toBeNull()
+    expect(summary.days.every((day) => day.isWithinPremiumReference === false)).toBe(true)
   })
 
   it('matches automatic break thresholds', () => {
@@ -372,4 +471,16 @@ describe('payCalculator', () => {
 function minutesOfDay(timestamp: number): number {
   const date = new Date(timestamp)
   return date.getUTCHours() * 60 + date.getUTCMinutes()
+}
+
+function requiredHoursWorkdayRecord(dayKey: string): DayRecord {
+  return workRecord(dayKey, { startMinute: 9 * 60, endMinute: 18 * 60 })
+}
+
+function tenHourNetWorkdayRecord(dayKey: string): DayRecord {
+  return workRecord(dayKey, { startMinute: 9 * 60, endMinute: 20 * 60 })
+}
+
+function weekdayWorkdayKeys(monthDayKey: string): string[] {
+  return datesInMonth(monthDayKey).filter((dayKey) => isWeekday(dayKey) && !isHolidayDay(dayKey))
 }

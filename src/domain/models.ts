@@ -2,6 +2,10 @@ export const dayStatuses = ['work', 'annualLeave', 'businessTrip', 'holiday', 'o
 
 export type DayStatus = (typeof dayStatuses)[number]
 
+export const premiumCalculationModes = ['occurrence', 'settlement'] as const
+
+export type PremiumCalculationMode = (typeof premiumCalculationModes)[number]
+
 export const dayStatusDisplayName: Record<DayStatus, string> = {
   work: '근무',
   annualLeave: '연차',
@@ -62,6 +66,7 @@ export interface DayPayBreakdown {
   requiredHoursForDay: number
   premiumStartHoursForDay: number
   carryOverShortfallHoursForDay: number
+  isWithinPremiumReference: boolean
   grossWorkedSeconds: number
   autoBreakMinutes: number
   lunchBreakIsAutomatic: boolean
@@ -91,11 +96,14 @@ export interface MonthSummary {
   maxAllowedHours: number
   baseDailyRequiredHours: number
   baseDailyPremiumStartHours: number
+  premiumCalculationMode: PremiumCalculationMode
+  premiumReferenceDayKey: string | null
   recommendedWorkdaysElapsed: number
   recommendedHoursToDate: number
   totalNetWorkedHours: number
   totalRegularOvertimeHours: number
   totalPremiumOvertimeHours: number
+  totalNightPremiumHours: number
   totalPay: number
   days: DayPayBreakdown[]
   exceedsMonthlyCap: boolean

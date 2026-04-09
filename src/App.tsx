@@ -15,7 +15,7 @@ import {
 import { useInstallPrompt } from './app/useInstallPrompt'
 import { useAppModel } from './app/useAppModel'
 import { automaticLunchBreakMinutes } from './domain/payCalculator'
-import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord } from './domain/models'
+import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord, type PremiumCalculationMode } from './domain/models'
 import {
   combineDayAndMinutes,
   datesInMonth,
@@ -33,7 +33,8 @@ function App() {
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false)
   const dates = datesInMonth(model.selectedMonth)
   const selectedRecord = model.recordFor(model.selectedDate)
-  const selectedBreakdown = model.dayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
+  const occurrenceSelectedBreakdown = model.dayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
+  const displaySelectedBreakdown = model.displayDayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
   const selectedStatusLabel = dayStatusDisplayName[selectedRecord.status]
 
   function patchSelectedRecord(patch: Partial<DayRecord>) {
@@ -129,11 +130,11 @@ function App() {
             </article>
             <article className="live-card__stat">
               <span>Selected pay</span>
-              <strong>{currency(selectedBreakdown.totalPay)}</strong>
+              <strong>{currency(occurrenceSelectedBreakdown.totalPay)}</strong>
             </article>
             <article className="live-card__stat">
               <span>Premium line</span>
-              <strong>{premiumStartDisplayValue(selectedBreakdown)}</strong>
+              <strong>{premiumStartDisplayValue(occurrenceSelectedBreakdown, model.monthSummary)}</strong>
             </article>
           </div>
         </section>
@@ -150,39 +151,48 @@ function App() {
 
       <main className="layout-grid">
         <section className="surface summary-grid" aria-label="이번 달 요약">
-          <SectionHeader title="이번 달 요약" subtitle={monthLabel(model.selectedMonth)} />
+          <SectionHeader
+            title="이번 달 요약"
+            subtitle={monthLabel(model.selectedMonth)}
+            action={
+              <PremiumModeControl
+                value={model.premiumCalculationMode}
+                onChange={model.setPremiumCalculationMode}
+              />
+            }
+          />
           <div className="summary-grid__cards">
             <SummaryCard
               title="총 추가 금액"
-              value={currency(model.monthSummary.totalPay)}
-              subtitle={`1.5배 대상 ${hours(model.monthSummary.totalPremiumOvertimeHours)}`}
+              value={currency(model.displayMonthSummary.totalPay)}
+              subtitle={`1.5배 대상 ${hours(model.displayMonthSummary.totalPremiumOvertimeHours)} · 심야 가산 ${hours(model.displayMonthSummary.totalNightPremiumHours)}`}
             />
             <SummaryCard
               title="월 필수 근무"
-              value={wholeHours(model.monthSummary.requiredHours)}
-              subtitle={requiredHoursSubtitle(model.monthSummary)}
+              value={wholeHours(model.displayMonthSummary.requiredHours)}
+              subtitle={requiredHoursSubtitle(model.displayMonthSummary)}
             />
             <SummaryCard
               title="남은 가능 시간"
-              value={hours(Math.max(0, model.monthSummary.maxAllowedHours - model.monthSummary.totalNetWorkedHours))}
+              value={hours(Math.max(0, model.displayMonthSummary.maxAllowedHours - model.displayMonthSummary.totalNetWorkedHours))}
               subtitle={
-                model.monthSummary.exceedsMonthlyCap
-                  ? `상한 초과 ${hours(model.monthSummary.totalNetWorkedHours - model.monthSummary.maxAllowedHours)}`
-                  : `월 상한 ${wholeHours(model.monthSummary.maxAllowedHours)}`
+                model.displayMonthSummary.exceedsMonthlyCap
+                  ? `상한 초과 ${hours(model.displayMonthSummary.totalNetWorkedHours - model.displayMonthSummary.maxAllowedHours)}`
+                  : `월 상한 ${wholeHours(model.displayMonthSummary.maxAllowedHours)}`
               }
             />
             <SummaryCard
               title="1.5배 시작선"
-              value={premiumStartDisplayValue(selectedBreakdown)}
-              subtitle={premiumStartSummarySubtitle(selectedBreakdown, model.monthSummary)}
+              value={premiumStartDisplayValue(displaySelectedBreakdown, model.displayMonthSummary)}
+              subtitle={premiumStartSummarySubtitle(displaySelectedBreakdown, model.displayMonthSummary)}
             />
             <SummaryCard
               title="총 실근무"
-              value={workedProgressValue(model.monthSummary)}
-              subtitle={workedProgressSubtitle(model.monthSummary)}
+              value={workedProgressValue(model.displayMonthSummary)}
+              subtitle={workedProgressSubtitle(model.displayMonthSummary)}
             />
           </div>
-          {model.monthSummary.exceedsMonthlyCap ? (
+          {model.displayMonthSummary.exceedsMonthlyCap ? (
             <p className="warning-text">월 최대 근무 가능 시간을 넘겼습니다. 입력은 유지되지만 확인이 필요합니다.</p>
           ) : null}
         </section>
@@ -305,12 +315,12 @@ function App() {
         <section className="surface editor-surface">
           <SectionHeader title="선택한 날짜" subtitle={dayLabel(model.selectedDate)} />
           <div className="metrics-row">
-            <MetricCard title="추가 금액" value={currency(selectedBreakdown.totalPay)} />
-            <MetricCard title="실근무" value={hoursFromSeconds(selectedBreakdown.netWorkedSeconds)} />
-            <MetricCard title="심야 가산" value={hoursFromSeconds(selectedBreakdown.nightPremiumSeconds)} />
+            <MetricCard title="추가 금액" value={currency(displaySelectedBreakdown.totalPay)} />
+            <MetricCard title="실근무" value={hoursFromSeconds(displaySelectedBreakdown.netWorkedSeconds)} />
+            <MetricCard title="심야 가산" value={hoursFromSeconds(displaySelectedBreakdown.nightPremiumSeconds)} />
             <MetricCard
-              title={selectedBreakdown.lunchBreakIsAutomatic ? '점심시간(자동)' : '점심시간'}
-              value={`${selectedBreakdown.autoBreakMinutes}분`}
+              title={displaySelectedBreakdown.lunchBreakIsAutomatic ? '점심시간(자동)' : '점심시간'}
+              value={`${displaySelectedBreakdown.autoBreakMinutes}분`}
             />
           </div>
 
@@ -498,9 +508,7 @@ function App() {
                   <span>
                     {selectedRecord.startMinute === null
                       ? '시작시간 입력 필요'
-                      : selectedBreakdown.premiumStartTimestamp === null
-                        ? '계산 불가'
-                        : premiumStartText(selectedBreakdown.premiumStartTimestamp, model.selectedDate)}
+                      : premiumStartSummaryValue(displaySelectedBreakdown, model.displayMonthSummary, model.selectedDate)}
                   </span>
                 </div>
                 <p className="hint-text">
@@ -585,6 +593,33 @@ function SectionHeader({ title, subtitle, action }: { title: string; subtitle: s
   )
 }
 
+function PremiumModeControl({
+  value,
+  onChange,
+}: {
+  value: PremiumCalculationMode
+  onChange: (mode: PremiumCalculationMode) => void
+}) {
+  return (
+    <div className="segmented-control" role="group" aria-label="추가수당 계산 기준">
+      <button
+        type="button"
+        className={`segmented-control__button ${value === 'occurrence' ? 'is-active' : ''}`}
+        onClick={() => onChange('occurrence')}
+      >
+        발생 기준
+      </button>
+      <button
+        type="button"
+        className={`segmented-control__button ${value === 'settlement' ? 'is-active' : ''}`}
+        onClick={() => onChange('settlement')}
+      >
+        정산 기준
+      </button>
+    </div>
+  )
+}
+
 function SummaryCard({ title, value, subtitle }: { title: string; value: string; subtitle: string }) {
   return (
     <article className="summary-card">
@@ -630,18 +665,52 @@ function premiumStartSummarySubtitle(
     return `${dayStatusDisplayName[breakdown.status]} · 근무 상태에서만 계산됩니다`
   }
 
+  if (summary.premiumCalculationMode === 'settlement') {
+    return '정산 기준 · 기준일까지 누적 실근무로 재계산'
+  }
+
   const premiumShareHours = Math.max(0, summary.baseDailyPremiumStartHours - summary.baseDailyRequiredHours)
   const carryOverHours = Math.max(0, breakdown.carryOverShortfallHoursForDay)
 
   return `선택일 기준 · 필수 ${hours(summary.baseDailyRequiredHours)} + 추가 기준 분배 ${hours(premiumShareHours)} + 이월 ${hours(carryOverHours)}`
 }
 
-function premiumStartDisplayValue(breakdown: DayPayBreakdown): string {
+function premiumStartDisplayValue(
+  breakdown: DayPayBreakdown,
+  summary: ReturnType<typeof useAppModel>['monthSummary'],
+): string {
   if (breakdown.status !== 'work') {
     return '적용 안 함'
   }
 
+  if (summary.premiumCalculationMode === 'settlement') {
+    if (!breakdown.isWithinPremiumReference) {
+      return '정산 대상 아님'
+    }
+    if (breakdown.premiumOvertimeSeconds === 0) {
+      return '미도달'
+    }
+  }
+
   return hours(breakdown.premiumStartHoursForDay)
+}
+
+function premiumStartSummaryValue(
+  breakdown: DayPayBreakdown,
+  summary: ReturnType<typeof useAppModel>['monthSummary'],
+  dayKey: string,
+): string {
+  if (summary.premiumCalculationMode === 'settlement' && !breakdown.isWithinPremiumReference) {
+    return '정산 대상 아님'
+  }
+  if (summary.premiumCalculationMode === 'settlement' && breakdown.premiumOvertimeSeconds === 0) {
+    return '미도달'
+  }
+  if (breakdown.premiumStartTimestamp === null) {
+    return '계산 불가'
+  }
+
+  return premiumStartText(breakdown.premiumStartTimestamp, dayKey)
 }
 
 function captionForBreakdown(breakdown: DayPayBreakdown): string {
@@ -727,6 +796,7 @@ function emptyBreakdown(dayKey: string, status: DayPayBreakdown['status']): DayP
     requiredHoursForDay: 0,
     premiumStartHoursForDay: 0,
     carryOverShortfallHoursForDay: 0,
+    isWithinPremiumReference: true,
     grossWorkedSeconds: 0,
     autoBreakMinutes: 0,
     lunchBreakIsAutomatic: true,

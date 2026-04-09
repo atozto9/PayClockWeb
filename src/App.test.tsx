@@ -184,6 +184,108 @@ describe('App', () => {
       vi.useRealTimers()
     }
   })
+
+  it('switches summary and selected-day detail between occurrence and settlement while live card stays on occurrence', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+      window.localStorage.setItem(
+        'payclock:data:v1',
+        JSON.stringify({
+          settings: {
+            hourlyRate: 100,
+            premiumThresholdHours: 14,
+            refreshIntervalSeconds: 1,
+          },
+          records: [
+            {
+              id: 'aug-3-night',
+              dayKey: '2026-08-03',
+              status: 'work',
+              startMinute: 13 * 60,
+              endMinute: 23 * 60 + 30,
+              endsNextDay: false,
+              lunchBreakOverrideMinutes: null,
+              extraExcludedMinutes: 0,
+              nightPremiumEnabled: true,
+              note: '',
+              isRunning: false,
+            },
+            {
+              id: 'aug-4-long',
+              dayKey: '2026-08-04',
+              status: 'work',
+              startMinute: 9 * 60,
+              endMinute: 20 * 60,
+              endsNextDay: false,
+              lunchBreakOverrideMinutes: null,
+              extraExcludedMinutes: 0,
+              nightPremiumEnabled: false,
+              note: '',
+              isRunning: false,
+            },
+          ],
+        }),
+      )
+
+      render(<App />)
+
+      expect(summaryCardValue('1.5배 시작선')).toBe('8.7시간')
+      expect(summaryCardSubtitle('총 추가 금액')).toBe('1.5배 대상 2.1시간 · 심야 가산 0.8시간')
+      expect(metricCardValue('추가 금액')).toBe('₩195')
+      expect(liveCardStatValue('Selected pay')).toBe('₩195')
+
+      fireEvent.click(screen.getByRole('button', { name: '정산 기준' }))
+
+      expect(summaryCardValue('1.5배 시작선')).toBe('9.4시간')
+      expect(summaryCardSubtitle('1.5배 시작선')).toBe('정산 기준 · 기준일까지 누적 실근무로 재계산')
+      expect(summaryCardSubtitle('총 추가 금액')).toBe('1.5배 대상 2.1시간 · 심야 가산 1.5시간')
+      expect(metricCardValue('추가 금액')).toBe('₩90')
+      expect(liveCardStatValue('Selected pay')).toBe('₩195')
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks future selected days as outside settlement reference and does not persist the mode toggle', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+
+      render(<App />)
+
+      fireEvent.click(screen.getByTestId('day-cell-2026-08-05'))
+      fireEvent.click(screen.getByRole('button', { name: '정산 기준' }))
+
+      expect(summaryCardValue('1.5배 시작선')).toBe('정산 대상 아님')
+      expect(summaryCardSubtitle('1.5배 시작선')).toBe('정산 기준 · 기준일까지 누적 실근무로 재계산')
+
+      const persisted = window.localStorage.getItem('payclock:data:v1')
+      expect(persisted).toBeNull()
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
+  })
 })
 
 function summaryCardValue(title: string): string {
@@ -209,6 +311,15 @@ function liveCardStatValue(label: string): string {
   expect(stat).not.toBeNull()
 
   const value = stat?.querySelector('strong')?.textContent
+  expect(value).toBeTruthy()
+  return value as string
+}
+
+function metricCardValue(title: string): string {
+  const card = screen.getByText(title).closest('article')
+  expect(card).not.toBeNull()
+
+  const value = card?.querySelector('.metric-card__value')?.textContent
   expect(value).toBeTruthy()
   return value as string
 }

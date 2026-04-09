@@ -7,6 +7,7 @@ import {
   normalizeDayRecord,
   normalizeSettings,
   type MonthSummary,
+  type PremiumCalculationMode,
 } from './models'
 import {
   combineDayAndMinutes,
@@ -19,6 +20,28 @@ import {
 import { holidayNameForDayKey, isHolidayDay } from './holidayProvider'
 
 const requiredHourDeductionStatuses = new Set<DayStatus>(['annualLeave', 'businessTrip', 'holiday', 'off'])
+
+interface DayContext {
+  dayKey: string
+  record?: DayRecord
+  countsTowardRequiredProgress: boolean
+  countsTowardCatchUpDistribution: boolean
+}
+
+interface ResolvedWorkday {
+  dayKey: string
+  record: DayRecord
+  holidayName: string | null
+  shiftStartTimestamp: number | null
+  shiftEndTimestamp: number | null
+  effectiveStartTimestamp: number | null
+  grossWorkedSeconds: number
+  autoBreakMinutes: number
+  lunchBreakIsAutomatic: boolean
+  extraExcludedMinutes: number
+  netWorkedSeconds: number
+  isLive: boolean
+}
 
 export function defaultStatusForDay(dayKey: string): DayStatus {
   if (isHolidayDay(dayKey)) {
@@ -37,6 +60,7 @@ export function summarizeMonth(
   records: DayRecord[],
   settings: AppSettings,
   nowTimestamp = currentKoreanTimestamp(),
+  mode: PremiumCalculationMode = 'occurrence',
 ): MonthSummary {
   const normalizedSettings = normalizeSettings(settings)
   const monthDates = datesInMonth(containingMonthDayKey)
@@ -92,49 +116,39 @@ export function summarizeMonth(
       record,
       countsTowardRequiredProgress,
       countsTowardCatchUpDistribution: countsTowardRequiredProgress,
-    }
+    } satisfies DayContext
   })
   const remainingCatchUpDayCounts = remainingCatchUpDayCountsFor(dayContexts)
-  const recommendedReferenceDayKey = recommendedReferenceDayKeyForMonth(monthDates, dayKeyFromTimestamp(nowTimestamp))
-  const recommendedWorkdaysElapsed = recommendedReferenceDayKey === null
+  const premiumReferenceDayKey = recommendedReferenceDayKeyForMonth(monthDates, dayKeyFromTimestamp(nowTimestamp))
+  const premiumReferenceEffectiveWorkdays = premiumReferenceDayKey === null
     ? 0
-    : dayContexts.filter((context) => context.countsTowardRequiredProgress && context.dayKey <= recommendedReferenceDayKey).length
+    : dayContexts.filter((context) => context.countsTowardRequiredProgress && context.dayKey <= premiumReferenceDayKey).length
   const recommendedHoursToDate = effectiveWorkdays > 0
-    ? (requiredHours / effectiveWorkdays) * recommendedWorkdaysElapsed
+    ? (requiredHours / effectiveWorkdays) * premiumReferenceEffectiveWorkdays
     : 0
 
-  const dayBreakdowns: DayPayBreakdown[] = []
-  let actualWorkedBeforeHours = 0
-  let completedRequiredProgressDays = 0
-
-  for (const [index, context] of dayContexts.entries()) {
-    const expectedPremiumBeforeHours = baseDailyPremiumStartHours * completedRequiredProgressDays
-    const premiumShortfallBeforeHours = Math.max(0, expectedPremiumBeforeHours - actualWorkedBeforeHours)
-    const carryOverShortfallHoursForDay = remainingCatchUpDayCounts[index] > 0
-      ? premiumShortfallBeforeHours / remainingCatchUpDayCounts[index]
-      : 0
-    const requiredHoursForDay = baseDailyRequiredHours
-    const premiumStartHoursForDay = baseDailyPremiumStartHours + carryOverShortfallHoursForDay
-    const breakdown = breakdownForDay(
-      context.dayKey,
-      context.record,
-      normalizedSettings,
-      requiredHoursForDay,
-      premiumStartHoursForDay,
-      nowTimestamp,
-      carryOverShortfallHoursForDay,
-    )
-
-    dayBreakdowns.push(breakdown)
-    actualWorkedBeforeHours += breakdown.netWorkedSeconds / 3_600
-
-    if (context.countsTowardRequiredProgress) {
-      completedRequiredProgressDays += 1
-    }
-  }
+  const dayBreakdowns = mode === 'occurrence'
+    ? occurrenceDayBreakdowns(
+        dayContexts,
+        normalizedSettings,
+        baseDailyRequiredHours,
+        baseDailyPremiumStartHours,
+        remainingCatchUpDayCounts,
+        nowTimestamp,
+      )
+    : settlementDayBreakdowns(
+        dayContexts,
+        normalizedSettings,
+        baseDailyRequiredHours,
+        baseDailyPremiumStartHours,
+        premiumReferenceDayKey,
+        premiumReferenceEffectiveWorkdays,
+        nowTimestamp,
+      )
 
   const totalNetWorkedHours = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.netWorkedSeconds / 3_600, 0)
   const totalPremiumOvertimeHours = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.premiumOvertimeSeconds / 3_600, 0)
+  const totalNightPremiumHours = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.nightPremiumSeconds / 3_600, 0)
   const totalPay = dayBreakdowns.reduce((sum, breakdown) => sum + breakdown.totalPay, 0)
 
   return {
@@ -150,11 +164,14 @@ export function summarizeMonth(
     maxAllowedHours,
     baseDailyRequiredHours,
     baseDailyPremiumStartHours,
-    recommendedWorkdaysElapsed,
+    premiumCalculationMode: mode,
+    premiumReferenceDayKey,
+    recommendedWorkdaysElapsed: premiumReferenceEffectiveWorkdays,
     recommendedHoursToDate,
     totalNetWorkedHours,
     totalRegularOvertimeHours: 0,
     totalPremiumOvertimeHours,
+    totalNightPremiumHours,
     totalPay,
     days: dayBreakdowns,
     exceedsMonthlyCap: totalNetWorkedHours > maxAllowedHours,
@@ -170,92 +187,40 @@ export function breakdownForDay(
   nowTimestamp = currentKoreanTimestamp(),
   carryOverShortfallHoursForDay = 0,
 ): DayPayBreakdown {
-  const holidayName = holidayNameForDayKey(dayKey)
   const normalizedSettings = normalizeSettings(settings)
-  const normalizedRecord = record ? normalizeDayRecord(record) : createDefaultDayRecord(dayKey, defaultStatusForDay(dayKey))
-  const status = normalizedRecord.status
+  const resolved = resolvedWorkday(dayKey, record, nowTimestamp)
+  const estimatedPremiumStartTimestamp = resolved.shiftStartTimestamp === null
+    ? null
+    : premiumStartTimestamp(
+        resolved.shiftStartTimestamp,
+        resolved.record.lunchBreakOverrideMinutes,
+        resolved.record.extraExcludedMinutes,
+        premiumStartHoursForDay,
+      )
+  const premiumOvertimeStartTimestamp = resolved.effectiveStartTimestamp === null
+    ? null
+    : resolved.effectiveStartTimestamp + Math.max(0, premiumStartHoursForDay) * 3_600 * 1_000
+  const premiumOvertimeSeconds = premiumOvertimeStartTimestamp === null || resolved.shiftEndTimestamp === null
+    ? 0
+    : overlapSeconds(
+        resolved.effectiveStartTimestamp ?? premiumOvertimeStartTimestamp,
+        resolved.shiftEndTimestamp,
+        premiumOvertimeStartTimestamp,
+        resolved.shiftEndTimestamp,
+      )
+  const nightPremiumSeconds = nightPremiumSecondsForOccurrence(resolved, premiumOvertimeStartTimestamp)
 
-  if (status !== 'work' || normalizedRecord.startMinute === null) {
-    return emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay, carryOverShortfallHoursForDay)
-  }
-
-  const shiftStartTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.startMinute)
-  const estimatedPremiumStartTimestamp = premiumStartTimestamp(
-    shiftStartTimestamp,
-    normalizedRecord.lunchBreakOverrideMinutes,
-    normalizedRecord.extraExcludedMinutes,
-    premiumStartHoursForDay,
-  )
-
-  let shiftEndTimestamp: number | null = null
-  if (normalizedRecord.isRunning) {
-    shiftEndTimestamp = Math.max(nowTimestamp, shiftStartTimestamp)
-  } else if (normalizedRecord.endMinute !== null) {
-    shiftEndTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.endMinute, normalizedRecord.endsNextDay)
-  }
-
-  if (shiftEndTimestamp === null || shiftEndTimestamp <= shiftStartTimestamp) {
-    return {
-      ...emptyBreakdown(dayKey, status, holidayName, requiredHoursForDay, premiumStartHoursForDay, carryOverShortfallHoursForDay),
-      lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
-      extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
-      premiumStartTimestamp: estimatedPremiumStartTimestamp,
-      isLive: normalizedRecord.isRunning,
-    }
-  }
-
-  const grossWorkedSeconds = (shiftEndTimestamp - shiftStartTimestamp) / 1_000
-  const autoBreakMinutes = resolvedLunchBreakMinutes(grossWorkedSeconds, normalizedRecord.lunchBreakOverrideMinutes)
-  const totalExcludedSeconds = (autoBreakMinutes + normalizedRecord.extraExcludedMinutes) * 60
-  const excludedSeconds = Math.min(totalExcludedSeconds, grossWorkedSeconds)
-  const effectiveStartTimestamp = shiftStartTimestamp + excludedSeconds * 1_000
-  const netWorkedSeconds = Math.max(0, (shiftEndTimestamp - effectiveStartTimestamp) / 1_000)
-  const premiumOvertimeStartTimestamp = effectiveStartTimestamp + Math.max(0, premiumStartHoursForDay) * 3_600 * 1_000
-  const premiumOvertimeSeconds = overlapSeconds(
-    effectiveStartTimestamp,
-    shiftEndTimestamp,
-    premiumOvertimeStartTimestamp,
-    shiftEndTimestamp,
-  )
-
-  let nightPremiumSeconds = 0
-  if (normalizedRecord.nightPremiumEnabled) {
-    const nightStartTimestamp = combineDayAndMinutes(dayKey, 22 * 60)
-    nightPremiumSeconds = overlapSeconds(
-      effectiveStartTimestamp,
-      shiftEndTimestamp,
-      Math.max(premiumOvertimeStartTimestamp, nightStartTimestamp),
-      shiftEndTimestamp,
-    )
-  }
-
-  const hourlyRate = normalizedSettings.hourlyRate
-  const premiumOvertimePay = (premiumOvertimeSeconds / 3_600) * hourlyRate * 1.5
-  const nightPremiumPay = (nightPremiumSeconds / 3_600) * hourlyRate * 0.5
-  const totalPay = premiumOvertimePay + nightPremiumPay
-
-  return {
-    dayKey,
-    status,
-    holidayName,
+  return makeBreakdown(
+    resolved,
+    normalizedSettings,
     requiredHoursForDay,
     premiumStartHoursForDay,
     carryOverShortfallHoursForDay,
-    grossWorkedSeconds,
-    autoBreakMinutes,
-    lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
-    extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
-    netWorkedSeconds,
-    regularOvertimeSeconds: 0,
+    true,
     premiumOvertimeSeconds,
     nightPremiumSeconds,
-    regularOvertimePay: 0,
-    premiumOvertimePay,
-    nightPremiumPay,
-    totalPay,
-    premiumStartTimestamp: normalizedRecord.isRunning ? estimatedPremiumStartTimestamp : premiumOvertimeStartTimestamp,
-    isLive: normalizedRecord.isRunning,
-  }
+    resolved.isLive ? estimatedPremiumStartTimestamp : premiumOvertimeStartTimestamp,
+  )
 }
 
 export function automaticLunchBreakMinutes(grossWorkedSeconds: number): number {
@@ -266,6 +231,216 @@ export function automaticLunchBreakMinutes(grossWorkedSeconds: number): number {
     return 30
   }
   return 60
+}
+
+function occurrenceDayBreakdowns(
+  dayContexts: DayContext[],
+  settings: AppSettings,
+  baseDailyRequiredHours: number,
+  baseDailyPremiumStartHours: number,
+  remainingCatchUpDayCounts: number[],
+  nowTimestamp: number,
+): DayPayBreakdown[] {
+  const dayBreakdowns: DayPayBreakdown[] = []
+  let actualWorkedBeforeHours = 0
+  let completedRequiredProgressDays = 0
+
+  for (const [index, context] of dayContexts.entries()) {
+    const expectedPremiumBeforeHours = baseDailyPremiumStartHours * completedRequiredProgressDays
+    const premiumShortfallBeforeHours = Math.max(0, expectedPremiumBeforeHours - actualWorkedBeforeHours)
+    const carryOverShortfallHoursForDay = remainingCatchUpDayCounts[index] > 0
+      ? premiumShortfallBeforeHours / remainingCatchUpDayCounts[index]
+      : 0
+    const dayPremiumStartHours = baseDailyPremiumStartHours + carryOverShortfallHoursForDay
+    const breakdown = breakdownForDay(
+      context.dayKey,
+      context.record,
+      settings,
+      baseDailyRequiredHours,
+      dayPremiumStartHours,
+      nowTimestamp,
+      carryOverShortfallHoursForDay,
+    )
+
+    dayBreakdowns.push(breakdown)
+    actualWorkedBeforeHours += breakdown.netWorkedSeconds / 3_600
+
+    if (context.countsTowardRequiredProgress) {
+      completedRequiredProgressDays += 1
+    }
+  }
+
+  return dayBreakdowns
+}
+
+function settlementDayBreakdowns(
+  dayContexts: DayContext[],
+  settings: AppSettings,
+  baseDailyRequiredHours: number,
+  baseDailyPremiumStartHours: number,
+  premiumReferenceDayKey: string | null,
+  premiumReferenceEffectiveWorkdays: number,
+  nowTimestamp: number,
+): DayPayBreakdown[] {
+  const resolvedDays = dayContexts.map((context) => resolvedWorkday(context.dayKey, context.record, nowTimestamp))
+  const referencedIndices = dayContexts
+    .map((context, index) => ({ context, index }))
+    .filter(({ context }) => premiumReferenceDayKey !== null && context.dayKey <= premiumReferenceDayKey)
+    .map(({ index }) => index)
+
+  const referencedWorkedSeconds = referencedIndices.reduce((sum, index) => sum + resolvedDays[index].netWorkedSeconds, 0)
+  const nonPremiumBudgetSeconds = Math.max(0, baseDailyPremiumStartHours) * 3_600 * premiumReferenceEffectiveWorkdays
+  let remainingPremiumSeconds = Math.max(0, referencedWorkedSeconds - nonPremiumBudgetSeconds)
+  const allocatedNightSeconds = Array.from({ length: dayContexts.length }, () => 0)
+  const allocatedNonNightSeconds = Array.from({ length: dayContexts.length }, () => 0)
+
+  for (const index of [...referencedIndices].reverse()) {
+    const nightCandidateSeconds = settlementNightCandidateSeconds(resolvedDays[index])
+    const allocatedSeconds = Math.min(nightCandidateSeconds, remainingPremiumSeconds)
+    allocatedNightSeconds[index] = allocatedSeconds
+    remainingPremiumSeconds -= allocatedSeconds
+  }
+
+  for (const index of [...referencedIndices].reverse()) {
+    const nonNightCandidateSeconds = Math.max(0, resolvedDays[index].netWorkedSeconds - settlementNightCandidateSeconds(resolvedDays[index]))
+    const allocatedSeconds = Math.min(nonNightCandidateSeconds, remainingPremiumSeconds)
+    allocatedNonNightSeconds[index] = allocatedSeconds
+    remainingPremiumSeconds -= allocatedSeconds
+  }
+
+  return dayContexts.map((_, index) => {
+    const resolved = resolvedDays[index]
+    const isWithinPremiumReference = referencedIndices.includes(index)
+    const premiumOvertimeSeconds = allocatedNightSeconds[index] + allocatedNonNightSeconds[index]
+    const nonPremiumWorkedSeconds = Math.max(0, resolved.netWorkedSeconds - premiumOvertimeSeconds)
+    const premiumStartTimestamp = premiumOvertimeSeconds > 0 && resolved.effectiveStartTimestamp !== null
+      ? resolved.effectiveStartTimestamp + nonPremiumWorkedSeconds * 1_000
+      : null
+
+    return makeBreakdown(
+      resolved,
+      settings,
+      baseDailyRequiredHours,
+      premiumOvertimeSeconds > 0 ? nonPremiumWorkedSeconds / 3_600 : 0,
+      0,
+      isWithinPremiumReference,
+      premiumOvertimeSeconds,
+      allocatedNightSeconds[index],
+      premiumStartTimestamp,
+    )
+  })
+}
+
+function resolvedWorkday(dayKey: string, record: DayRecord | undefined, nowTimestamp: number): ResolvedWorkday {
+  const holidayName = holidayNameForDayKey(dayKey)
+  const normalizedRecord = record ? normalizeDayRecord(record) : createDefaultDayRecord(dayKey, defaultStatusForDay(dayKey))
+  const status = normalizedRecord.status
+
+  if (status !== 'work' || normalizedRecord.startMinute === null) {
+    return {
+      dayKey,
+      record: normalizedRecord,
+      holidayName,
+      shiftStartTimestamp: null,
+      shiftEndTimestamp: null,
+      effectiveStartTimestamp: null,
+      grossWorkedSeconds: 0,
+      autoBreakMinutes: 0,
+      lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
+      extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
+      netWorkedSeconds: 0,
+      isLive: normalizedRecord.isRunning,
+    }
+  }
+
+  const shiftStartTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.startMinute)
+  let shiftEndTimestamp: number | null = null
+
+  if (normalizedRecord.isRunning) {
+    shiftEndTimestamp = Math.max(nowTimestamp, shiftStartTimestamp)
+  } else if (normalizedRecord.endMinute !== null) {
+    shiftEndTimestamp = combineDayAndMinutes(dayKey, normalizedRecord.endMinute, normalizedRecord.endsNextDay)
+  }
+
+  if (shiftEndTimestamp === null || shiftEndTimestamp <= shiftStartTimestamp) {
+    return {
+      dayKey,
+      record: normalizedRecord,
+      holidayName,
+      shiftStartTimestamp,
+      shiftEndTimestamp: null,
+      effectiveStartTimestamp: null,
+      grossWorkedSeconds: 0,
+      autoBreakMinutes: 0,
+      lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
+      extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
+      netWorkedSeconds: 0,
+      isLive: normalizedRecord.isRunning,
+    }
+  }
+
+  const grossWorkedSeconds = (shiftEndTimestamp - shiftStartTimestamp) / 1_000
+  const autoBreakMinutes = resolvedLunchBreakMinutes(grossWorkedSeconds, normalizedRecord.lunchBreakOverrideMinutes)
+  const totalExcludedSeconds = (autoBreakMinutes + normalizedRecord.extraExcludedMinutes) * 60
+  const excludedSeconds = Math.min(totalExcludedSeconds, grossWorkedSeconds)
+  const effectiveStartTimestamp = shiftStartTimestamp + excludedSeconds * 1_000
+  const netWorkedSeconds = Math.max(0, (shiftEndTimestamp - effectiveStartTimestamp) / 1_000)
+
+  return {
+    dayKey,
+    record: normalizedRecord,
+    holidayName,
+    shiftStartTimestamp,
+    shiftEndTimestamp,
+    effectiveStartTimestamp,
+    grossWorkedSeconds,
+    autoBreakMinutes,
+    lunchBreakIsAutomatic: normalizedRecord.lunchBreakOverrideMinutes === null,
+    extraExcludedMinutes: normalizedRecord.extraExcludedMinutes,
+    netWorkedSeconds,
+    isLive: normalizedRecord.isRunning,
+  }
+}
+
+function makeBreakdown(
+  resolved: ResolvedWorkday,
+  settings: AppSettings,
+  requiredHoursForDay: number,
+  premiumStartHoursForDay: number,
+  carryOverShortfallHoursForDay: number,
+  isWithinPremiumReference: boolean,
+  premiumOvertimeSeconds: number,
+  nightPremiumSeconds: number,
+  premiumStartTimestamp: number | null,
+): DayPayBreakdown {
+  const hourlyRate = settings.hourlyRate
+  const premiumOvertimePay = (premiumOvertimeSeconds / 3_600) * hourlyRate * 1.5
+  const nightPremiumPay = (nightPremiumSeconds / 3_600) * hourlyRate * 0.5
+  const totalPay = premiumOvertimePay + nightPremiumPay
+
+  return {
+    dayKey: resolved.dayKey,
+    status: resolved.record.status,
+    holidayName: resolved.holidayName,
+    requiredHoursForDay,
+    premiumStartHoursForDay,
+    carryOverShortfallHoursForDay,
+    isWithinPremiumReference,
+    grossWorkedSeconds: resolved.grossWorkedSeconds,
+    autoBreakMinutes: resolved.autoBreakMinutes,
+    lunchBreakIsAutomatic: resolved.lunchBreakIsAutomatic,
+    extraExcludedMinutes: resolved.extraExcludedMinutes,
+    netWorkedSeconds: resolved.netWorkedSeconds,
+    regularOvertimeSeconds: 0,
+    premiumOvertimeSeconds,
+    nightPremiumSeconds,
+    regularOvertimePay: 0,
+    premiumOvertimePay,
+    nightPremiumPay,
+    totalPay,
+    premiumStartTimestamp,
+    isLive: resolved.isLive,
+  }
 }
 
 function premiumStartTimestamp(
@@ -304,6 +479,42 @@ function overlapSeconds(
   return Math.max(0, (end - start) / 1_000)
 }
 
+function nightPremiumSecondsForOccurrence(
+  resolved: ResolvedWorkday,
+  premiumOvertimeStartTimestamp: number | null,
+): number {
+  if (
+    !resolved.record.nightPremiumEnabled
+    || resolved.effectiveStartTimestamp === null
+    || resolved.shiftEndTimestamp === null
+    || premiumOvertimeStartTimestamp === null
+  ) {
+    return 0
+  }
+
+  const nightStartTimestamp = combineDayAndMinutes(resolved.dayKey, 22 * 60)
+  return overlapSeconds(
+    resolved.effectiveStartTimestamp,
+    resolved.shiftEndTimestamp,
+    Math.max(premiumOvertimeStartTimestamp, nightStartTimestamp),
+    resolved.shiftEndTimestamp,
+  )
+}
+
+function settlementNightCandidateSeconds(resolved: ResolvedWorkday): number {
+  if (!resolved.record.nightPremiumEnabled || resolved.effectiveStartTimestamp === null || resolved.shiftEndTimestamp === null) {
+    return 0
+  }
+
+  const nightStartTimestamp = combineDayAndMinutes(resolved.dayKey, 22 * 60)
+  return overlapSeconds(
+    resolved.effectiveStartTimestamp,
+    resolved.shiftEndTimestamp,
+    nightStartTimestamp,
+    resolved.shiftEndTimestamp,
+  )
+}
+
 function countsTowardRequiredProgressForDay(dayKey: string, status: DayStatus): boolean {
   return isWeekday(dayKey) && !isHolidayDay(dayKey) && status === 'work'
 }
@@ -322,38 +533,6 @@ function remainingCatchUpDayCountsFor(
   }
 
   return remainingCounts
-}
-
-function emptyBreakdown(
-  dayKey: string,
-  status: DayStatus,
-  holidayName: string | null,
-  requiredHoursForDay = 0,
-  premiumStartHoursForDay = 0,
-  carryOverShortfallHoursForDay = 0,
-): DayPayBreakdown {
-  return {
-    dayKey,
-    status,
-    holidayName,
-    requiredHoursForDay,
-    premiumStartHoursForDay,
-    carryOverShortfallHoursForDay,
-    grossWorkedSeconds: 0,
-    autoBreakMinutes: 0,
-    lunchBreakIsAutomatic: true,
-    extraExcludedMinutes: 0,
-    netWorkedSeconds: 0,
-    regularOvertimeSeconds: 0,
-    premiumOvertimeSeconds: 0,
-    nightPremiumSeconds: 0,
-    regularOvertimePay: 0,
-    premiumOvertimePay: 0,
-    nightPremiumPay: 0,
-    totalPay: 0,
-    premiumStartTimestamp: null,
-    isLive: false,
-  }
 }
 
 export function dayKeyForTimestamp(timestamp: number): string {
