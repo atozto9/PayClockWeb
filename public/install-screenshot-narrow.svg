@@ -1,0 +1,58 @@
+<svg width="720" height="1280" viewBox="0 0 720 1280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="720" height="1280" fill="#EFE4D3"/>
+  <rect x="32" y="32" width="656" height="120" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="60" y="92" fill="#182834" font-size="52" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">PayClock</text>
+  <text x="60" y="124" fill="#6B7C86" font-size="20" font-family="SUIT Variable, Arial, sans-serif">오늘 근무 패널이 먼저 보이는 설치형 PWA</text>
+
+  <rect x="32" y="176" width="656" height="412" rx="32" fill="#122431"/>
+  <text x="64" y="224" fill="#8DD3D8" font-size="16" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">TODAY CONSOLE</text>
+  <text x="64" y="316" fill="#F7F0E8" font-size="82" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">₩48,000</text>
+  <text x="64" y="350" fill="#B7C3CB" font-size="20" font-family="SUIT Variable, Arial, sans-serif">4월 9일 목요일 · 실시간 진행 중</text>
+  <rect x="64" y="386" width="592" height="92" rx="22" fill="rgba(255,255,255,0.08)"/>
+  <text x="92" y="424" fill="#B7C3CB" font-size="16" font-family="SUIT Variable, Arial, sans-serif">추가수당 시작</text>
+  <text x="92" y="458" fill="#F7F0E8" font-size="34" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">34분 남음</text>
+  <rect x="64" y="504" width="592" height="16" rx="8" fill="rgba(255,255,255,0.12)"/>
+  <circle cx="64" cy="512" r="8" fill="#7DD3D8"/>
+  <circle cx="332" cy="512" r="8" fill="#F6D365"/>
+  <circle cx="504" cy="512" r="8" fill="#F59E0B"/>
+  <circle cx="656" cy="512" r="8" fill="#F7F0E8"/>
+  <rect x="64" y="542" width="286" height="56" rx="18" fill="#0E8B93"/>
+  <rect x="370" y="542" width="286" height="56" rx="18" fill="rgba(255,255,255,0.12)"/>
+  <text x="152" y="576" fill="#F7F0E8" font-size="22" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">출근 시작</text>
+  <text x="458" y="576" fill="#F7F0E8" font-size="22" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">근무 종료</text>
+
+  <rect x="32" y="620" width="656" height="196" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="60" y="668" fill="#182834" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">이번 달 요약</text>
+  <rect x="60" y="690" width="288" height="94" rx="20" fill="#FFF8F0"/>
+  <rect x="372" y="690" width="288" height="94" rx="20" fill="#FFF8F0"/>
+  <text x="84" y="722" fill="#6B7C86" font-size="14" font-family="SUIT Variable, Arial, sans-serif">총 추가 금액</text>
+  <text x="84" y="756" fill="#182834" font-size="32" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">₩128,000</text>
+  <text x="396" y="722" fill="#6B7C86" font-size="14" font-family="SUIT Variable, Arial, sans-serif">총 실근무</text>
+  <text x="396" y="756" fill="#182834" font-size="32" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">92.4시간</text>
+
+  <rect x="32" y="848" width="656" height="400" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="60" y="896" fill="#182834" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">달력</text>
+  <g fill="#FFF8F0" stroke="rgba(24,40,52,0.08)">
+    <rect x="60" y="922" width="78" height="88" rx="18"/>
+    <rect x="148" y="922" width="78" height="88" rx="18"/>
+    <rect x="236" y="922" width="78" height="88" rx="18"/>
+    <rect x="324" y="922" width="78" height="88" rx="18"/>
+    <rect x="412" y="922" width="78" height="88" rx="18"/>
+    <rect x="500" y="922" width="78" height="88" rx="18"/>
+    <rect x="588" y="922" width="72" height="88" rx="18"/>
+    <rect x="60" y="1022" width="78" height="88" rx="18"/>
+    <rect x="148" y="1022" width="78" height="88" rx="18" fill="#DFF0F0"/>
+    <rect x="236" y="1022" width="78" height="88" rx="18"/>
+    <rect x="324" y="1022" width="78" height="88" rx="18"/>
+    <rect x="412" y="1022" width="78" height="88" rx="18"/>
+    <rect x="500" y="1022" width="78" height="88" rx="18"/>
+    <rect x="588" y="1022" width="72" height="88" rx="18"/>
+    <rect x="60" y="1122" width="78" height="88" rx="18"/>
+    <rect x="148" y="1122" width="78" height="88" rx="18"/>
+    <rect x="236" y="1122" width="78" height="88" rx="18"/>
+    <rect x="324" y="1122" width="78" height="88" rx="18"/>
+    <rect x="412" y="1122" width="78" height="88" rx="18"/>
+    <rect x="500" y="1122" width="78" height="88" rx="18"/>
+    <rect x="588" y="1122" width="72" height="88" rx="18"/>
+  </g>
+</svg>

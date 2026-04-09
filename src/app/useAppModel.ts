@@ -4,6 +4,7 @@ import {
   createDefaultDayRecord,
   type AppData,
   type DayPayBreakdown,
+  type DayStatus,
   type DayRecord,
   type PremiumCalculationMode,
   normalizeAppData,
@@ -66,6 +67,10 @@ export function useAppModel() {
     return summarizeMonth(monthDayKey, data.records, data.settings, nowTimestamp, mode)
   }
 
+  function summaryForDate(dayKey: string, mode: PremiumCalculationMode = 'occurrence') {
+    return summaryForMonth(startOfMonth(dayKey), mode)
+  }
+
   function breakdownForDate(dayKey: string, mode: PremiumCalculationMode = 'occurrence'): DayPayBreakdown {
     const summary = summaryForMonth(startOfMonth(dayKey), mode)
     return summary.days.find((day) => day.dayKey === dayKey) ?? breakdownForDay(dayKey, undefined, data.settings, 0, 0, nowTimestamp)
@@ -123,6 +128,72 @@ export function useAppModel() {
       settings: data.settings,
       records: data.records.filter((record) => record.dayKey !== dayKey),
     })
+  }
+
+  function startTodayWork() {
+    const actionTimestamp = currentKoreanTimestamp()
+    const actionDayKey = dayKeyFromTimestamp(actionTimestamp)
+    const actionMinute = minutesFromMidnightForTimestamp(actionTimestamp)
+    const existing = recordFor(actionDayKey)
+
+    updateRecord({
+      ...createDefaultDayRecord(actionDayKey, 'work'),
+      id: existing.id,
+      note: existing.note,
+      status: 'work',
+      startMinute: actionMinute,
+      endMinute: null,
+      endsNextDay: false,
+      lunchBreakOverrideMinutes: null,
+      extraExcludedMinutes: 0,
+      nightPremiumEnabled: false,
+      isRunning: true,
+    })
+  }
+
+  function stopActiveWork() {
+    if (!activeRunningDayKey) {
+      return
+    }
+
+    const existing = recordFor(activeRunningDayKey)
+    updateRecord({
+      ...existing,
+      isRunning: false,
+      endMinute: null,
+    })
+  }
+
+  function setTodayStatus(status: DayStatus) {
+    const todayRecord = recordFor(todayKey)
+    updateRecord({
+      ...createDefaultDayRecord(todayKey, status),
+      id: todayRecord.id,
+      note: todayRecord.note,
+      status,
+    })
+  }
+
+  function projectedBreakdownForRunningDay(dayKey: string, extraMinutes: number): DayPayBreakdown | null {
+    const existing = recordFor(dayKey)
+    if (!existing.isRunning || existing.startMinute === null || extraMinutes <= 0) {
+      return null
+    }
+
+    const projectedEndTimestamp = nowTimestamp + extraMinutes * 60 * 1_000
+    const projectedRecords = data.records.map((candidate) =>
+      candidate.dayKey === dayKey
+        ? normalizeDayRecord({
+            ...existing,
+            isRunning: false,
+            endMinute: minutesFromMidnightForTimestamp(projectedEndTimestamp),
+            endsNextDay: dayKeyFromTimestamp(projectedEndTimestamp) !== dayKey,
+          })
+        : candidate,
+    )
+
+    const summary = summarizeMonth(startOfMonth(dayKey), projectedRecords, data.settings, projectedEndTimestamp, 'occurrence')
+    return summary.days.find((day) => day.dayKey === dayKey) ?? null
   }
 
   function setHourlyRate(value: number) {
@@ -295,6 +366,7 @@ export function useAppModel() {
     activeRunningDayKey,
     data,
     dayMap,
+    summaryForDate,
     displayBreakdownForDate,
     displayDayMap,
     displayMonthSummary,
@@ -311,10 +383,14 @@ export function useAppModel() {
     moveMonth,
     goToToday,
     resetDate,
+    startTodayWork,
+    stopActiveWork,
+    setTodayStatus,
     setHourlyRate,
     setPremiumThresholdHours,
     setRefreshIntervalSeconds,
     updateRecord,
+    projectedBreakdownForRunningDay,
     confirmPendingJSONImport,
     discardPendingJSONImport,
     exportJSON,

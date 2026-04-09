@@ -13,6 +13,21 @@
   --shadow-soft:
     0 24px 56px rgba(24, 40, 52, 0.11),
     0 8px 20px rgba(24, 40, 52, 0.05);
+  --type-display: clamp(2.5rem, 5.8vw, 5rem);
+  --type-section-title: clamp(1.45rem, 2.2vw, 1.9rem);
+  --type-value-xl: clamp(2.7rem, 6.4vw, 4.75rem);
+  --type-value-lg: clamp(1.45rem, 2vw, 1.78rem);
+  --type-value-md: 1.24rem;
+  --type-body: 1rem;
+  --type-body-sm: 0.95rem;
+  --type-caption: 0.84rem;
+  --type-label: 0.74rem;
+  --leading-display: 0.94;
+  --leading-heading: 1.08;
+  --leading-tight: 1.24;
+  --leading-body: 1.58;
+  --leading-caption: 1.45;
+  --tracking-label: 0.08em;
   --font-sans:
     'SUIT Variable',
     'Pretendard Variable',
@@ -46,6 +61,8 @@ body,
 
 body {
   margin: 0;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   background:
     linear-gradient(180deg, rgba(255, 250, 242, 0.7), rgba(239, 228, 211, 0.96)),
     var(--page-bg);
@@ -62,17 +79,19 @@ h1,
 h2,
 h3 {
   font-family: var(--font-display);
+  line-height: var(--leading-heading);
+  letter-spacing: -0.03em;
   color: var(--text-strong);
 }
 
 h1 {
-  font-size: clamp(2.8rem, 6vw, 5.4rem);
-  line-height: 0.92;
+  font-size: var(--type-display);
+  line-height: var(--leading-display);
   letter-spacing: -0.06em;
 }
 
 p {
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 
 a {

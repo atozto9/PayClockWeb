@@ -1,0 +1,65 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#EFE4D3"/>
+  <rect x="40" y="40" width="1200" height="96" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="72" y="92" fill="#182834" font-size="54" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">PayClock</text>
+  <text x="72" y="121" fill="#6B7C86" font-size="20" font-family="SUIT Variable, Arial, sans-serif">추가수당 흐름과 오늘 근무 상태를 한 화면에서 관리하는 설치형 PWA</text>
+
+  <rect x="40" y="164" width="760" height="146" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="72" y="208" fill="#182834" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">이번 달 요약</text>
+  <rect x="72" y="228" width="210" height="58" rx="18" fill="#FFF8F0"/>
+  <rect x="296" y="228" width="210" height="58" rx="18" fill="#FFF8F0"/>
+  <rect x="520" y="228" width="210" height="58" rx="18" fill="#FFF8F0"/>
+  <text x="92" y="252" fill="#6B7C86" font-size="14" font-family="SUIT Variable, Arial, sans-serif">총 추가 금액</text>
+  <text x="92" y="278" fill="#182834" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">₩128,000</text>
+  <text x="316" y="252" fill="#6B7C86" font-size="14" font-family="SUIT Variable, Arial, sans-serif">월 필수 근무</text>
+  <text x="316" y="278" fill="#182834" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">171시간</text>
+  <text x="540" y="252" fill="#6B7C86" font-size="14" font-family="SUIT Variable, Arial, sans-serif">1.5배 시작선</text>
+  <text x="540" y="278" fill="#182834" font-size="24" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">9.4시간</text>
+
+  <rect x="40" y="334" width="760" height="346" rx="28" fill="#FAF4EC" stroke="rgba(24,40,52,0.14)"/>
+  <text x="72" y="378" fill="#182834" font-size="30" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">달력</text>
+  <g fill="#FFF8F0" stroke="rgba(24,40,52,0.08)">
+    <rect x="72" y="402" width="92" height="78" rx="18"/>
+    <rect x="176" y="402" width="92" height="78" rx="18"/>
+    <rect x="280" y="402" width="92" height="78" rx="18"/>
+    <rect x="384" y="402" width="92" height="78" rx="18"/>
+    <rect x="488" y="402" width="92" height="78" rx="18"/>
+    <rect x="592" y="402" width="92" height="78" rx="18"/>
+    <rect x="696" y="402" width="72" height="78" rx="18"/>
+    <rect x="72" y="492" width="92" height="78" rx="18"/>
+    <rect x="176" y="492" width="92" height="78" rx="18" fill="#DFF0F0"/>
+    <rect x="280" y="492" width="92" height="78" rx="18"/>
+    <rect x="384" y="492" width="92" height="78" rx="18"/>
+    <rect x="488" y="492" width="92" height="78" rx="18"/>
+    <rect x="592" y="492" width="92" height="78" rx="18"/>
+    <rect x="696" y="492" width="72" height="78" rx="18"/>
+    <rect x="72" y="582" width="92" height="78" rx="18"/>
+    <rect x="176" y="582" width="92" height="78" rx="18"/>
+    <rect x="280" y="582" width="92" height="78" rx="18"/>
+    <rect x="384" y="582" width="92" height="78" rx="18"/>
+    <rect x="488" y="582" width="92" height="78" rx="18"/>
+    <rect x="592" y="582" width="92" height="78" rx="18"/>
+    <rect x="696" y="582" width="72" height="78" rx="18"/>
+  </g>
+
+  <rect x="830" y="164" width="410" height="516" rx="32" fill="#122431"/>
+  <text x="862" y="214" fill="#8DD3D8" font-size="16" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">TODAY CONSOLE</text>
+  <text x="862" y="296" fill="#F7F0E8" font-size="74" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">₩48,000</text>
+  <text x="862" y="330" fill="#B7C3CB" font-size="20" font-family="SUIT Variable, Arial, sans-serif">4월 9일 목요일 · 실시간 진행 중</text>
+  <rect x="862" y="362" width="346" height="76" rx="22" fill="rgba(255,255,255,0.08)"/>
+  <text x="886" y="393" fill="#B7C3CB" font-size="15" font-family="SUIT Variable, Arial, sans-serif">추가수당 시작</text>
+  <text x="886" y="420" fill="#F7F0E8" font-size="28" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">34분 남음</text>
+  <rect x="862" y="456" width="168" height="52" rx="18" fill="#0E8B93"/>
+  <rect x="1040" y="456" width="168" height="52" rx="18" fill="rgba(255,255,255,0.12)"/>
+  <text x="917" y="488" fill="#F7F0E8" font-size="20" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">출근 시작</text>
+  <text x="1096" y="488" fill="#F7F0E8" font-size="20" font-family="SUIT Variable, Arial, sans-serif" font-weight="700">근무 종료</text>
+  <rect x="862" y="540" width="346" height="16" rx="8" fill="rgba(255,255,255,0.12)"/>
+  <circle cx="862" cy="548" r="8" fill="#7DD3D8"/>
+  <circle cx="1030" cy="548" r="8" fill="#F6D365"/>
+  <circle cx="1148" cy="548" r="8" fill="#F59E0B"/>
+  <circle cx="1208" cy="548" r="8" fill="#F7F0E8"/>
+  <text x="862" y="592" fill="#F7F0E8" font-size="18" font-family="SUIT Variable, Arial, sans-serif">시작</text>
+  <text x="984" y="592" fill="#F7F0E8" font-size="18" font-family="SUIT Variable, Arial, sans-serif">추가수당</text>
+  <text x="1110" y="592" fill="#F7F0E8" font-size="18" font-family="SUIT Variable, Arial, sans-serif">22시 가산</text>
+  <text x="1178" y="592" fill="#F7F0E8" font-size="18" font-family="SUIT Variable, Arial, sans-serif">현재</text>
+</svg>

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import './App.css'
 import {
   clockText,
@@ -12,10 +12,13 @@ import {
   premiumStartText,
   wholeHours,
 } from './app/formatters'
+import { useAppBadge } from './app/useAppBadge'
 import { useInstallPrompt } from './app/useInstallPrompt'
+import { useLaunchQueueImport } from './app/useLaunchQueueImport'
+import { useWakeLock } from './app/useWakeLock'
 import { useAppModel } from './app/useAppModel'
 import { automaticLunchBreakMinutes } from './domain/payCalculator'
-import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord, type PremiumCalculationMode } from './domain/models'
+import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord, type DayStatus, type PremiumCalculationMode } from './domain/models'
 import {
   combineDayAndMinutes,
   datesInMonth,
@@ -25,27 +28,79 @@ import {
 
 const weekdaySymbols = ['일', '월', '화', '수', '목', '금', '토']
 const quickExcludedValues = [0, 30, 60, 90]
+const todayStatusActions: DayStatus[] = ['annualLeave', 'businessTrip', 'off']
 
 function App() {
   const model = useAppModel()
   const installPrompt = useInstallPrompt()
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const dataSectionRef = useRef<HTMLElement | null>(null)
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false)
+  const isSingleColumnLayout = useMediaQuery('(max-width: 980px)')
   const dates = datesInMonth(model.selectedMonth)
   const selectedRecord = model.recordFor(model.selectedDate)
-  const occurrenceSelectedBreakdown = model.dayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
   const displaySelectedBreakdown = model.displayDayMap.get(model.selectedDate) ?? emptyBreakdown(model.selectedDate, selectedRecord.status)
   const selectedStatusLabel = dayStatusDisplayName[selectedRecord.status]
+  const todayConsoleBreakdown = model.liveBreakdown
+  const todayConsoleRecord = model.recordFor(todayConsoleBreakdown.dayKey)
+  const todayMonthSummary = model.summaryForDate(todayConsoleBreakdown.dayKey)
+  const todayProjectedBreakdown = model.projectedBreakdownForRunningDay(todayConsoleBreakdown.dayKey, 30)
+  const todayConsoleTimeline = timelineForRecord(todayConsoleRecord, todayConsoleBreakdown, model.nowTimestamp)
+  const todayConsoleSummary = premiumProgressSummary(todayConsoleRecord, todayConsoleBreakdown, model.nowTimestamp)
+  const todayConsoleTitle = model.activeRunningDayKey && model.activeRunningDayKey !== model.todayKey ? '진행 중 근무' : '오늘 근무'
+
+  useWakeLock(model.activeRunningDayKey !== null)
+  useAppBadge(model.activeRunningDayKey !== null)
+  useLaunchQueueImport(model.importFile)
+
+  function openImportPicker() {
+    importInputRef.current?.click()
+  }
+
+  const handleLaunchAction = useEffectEvent((action: string) => {
+    switch (action) {
+      case 'today':
+        model.goToToday()
+        return
+      case 'start':
+        model.goToToday()
+        model.startTodayWork()
+        return
+      case 'stop':
+        model.stopActiveWork()
+        return
+      case 'import':
+        dataSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        window.setTimeout(() => {
+          openImportPicker()
+        }, 60)
+        return
+      case 'export-json':
+        model.exportJSON()
+        return
+      case 'export-csv':
+        model.exportCSV()
+        return
+    }
+  })
+
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href)
+    const action = currentUrl.searchParams.get('action')
+    if (!action) {
+      return
+    }
+
+    handleLaunchAction(action)
+    currentUrl.searchParams.delete('action')
+    window.history.replaceState({}, '', currentUrl)
+  }, [])
 
   function patchSelectedRecord(patch: Partial<DayRecord>) {
     model.updateRecord({
       ...selectedRecord,
       ...patch,
     })
-  }
-
-  function openImportPicker() {
-    importInputRef.current?.click()
   }
 
   function handleImportChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -57,87 +112,127 @@ function App() {
     void model.importFile(file)
   }
 
+  function handleTodayStart() {
+    model.goToToday()
+    model.startTodayWork()
+  }
+
+  function handleTodayStop() {
+    model.stopActiveWork()
+  }
+
+  function handleTodayStatus(status: DayStatus) {
+    model.goToToday()
+    model.setTodayStatus(status)
+  }
+
+  const todayConsoleSection = (
+    <section className={`today-console ${isSingleColumnLayout ? 'today-console--standalone' : ''}`} aria-label="오늘 근무 콘솔">
+      <div className="today-console__header">
+        <div>
+          <p className="section-kicker">{todayConsoleTitle}</p>
+          <h2 className="today-console__value" data-testid="live-pay">
+            {currency(todayConsoleBreakdown.totalPay)}
+          </h2>
+          <p className="today-console__context">
+            {dayLabel(todayConsoleBreakdown.dayKey)} · {todayConsoleRecord.isRunning ? '실시간 진행 중' : dayStatusDisplayName[todayConsoleRecord.status]}
+          </p>
+        </div>
+        <span className={`status-pill ${todayConsoleRecord.isRunning ? 'is-live' : ''}`}>
+          {todayConsoleRecord.isRunning ? 'Tracking now' : 'Today console'}
+        </span>
+      </div>
+
+      <p className="today-console__message">{todayConsoleSummary.description}</p>
+
+      <div className="today-console__stats">
+        <TodayStat title="이번 달 누적" value={currency(todayMonthSummary.totalPay)} />
+        <TodayStat title="추가수당 시작" value={todayConsoleSummary.value} />
+        <TodayStat
+          title="30분 더 근무"
+          value={projectedExtensionValue(todayProjectedBreakdown, todayConsoleBreakdown, todayConsoleRecord)}
+        />
+        <TodayStat title="현재 실근무" value={hoursFromSeconds(todayConsoleBreakdown.netWorkedSeconds)} />
+      </div>
+
+      <div className="today-console__actions">
+        <button
+          type="button"
+          className="primary-button quick-action-button"
+          onClick={handleTodayStart}
+          disabled={model.activeRunningDayKey !== null}
+        >
+          출근 시작
+        </button>
+        <button
+          type="button"
+          className="ghost-button quick-action-button"
+          onClick={handleTodayStop}
+          disabled={model.activeRunningDayKey === null}
+        >
+          근무 종료
+        </button>
+        {todayStatusActions.map((status) => (
+          <button
+            key={status}
+            type="button"
+            className={`chip-button quick-chip ${model.todayKey === model.selectedDate && selectedRecord.status === status ? 'is-active' : ''}`}
+            onClick={() => handleTodayStatus(status)}
+            disabled={model.activeRunningDayKey !== null}
+          >
+            {dayStatusDisplayName[status]}
+          </button>
+        ))}
+        <button type="button" className="ghost-button quick-action-button" onClick={() => model.resetDate(model.todayKey)}>
+          오늘 기록 초기화
+        </button>
+      </div>
+
+      <section className="timeline-card">
+        <div className="timeline-card__header">
+          <strong>오늘 추가수당 흐름</strong>
+          <span>{todayConsoleSummary.secondary}</span>
+        </div>
+        {todayConsoleTimeline ? (
+          <TodayTimeline timeline={todayConsoleTimeline} />
+        ) : (
+          <p className="hint-text">
+            근무 시작 후 `추가수당 시작`, `22시 이후 가산`, `점심/기타 제외 선차감` 흐름을 시각적으로 보여줍니다.
+          </p>
+        )}
+      </section>
+    </section>
+  )
+
   return (
     <div className="app-shell">
       <div className="background-grid" aria-hidden="true" />
-      <header className="hero-panel">
-        <div className="hero-copy">
+
+      <header className="surface masthead">
+        <div className="masthead__copy">
           <div className="hero-meta-row" aria-label="핵심 특징">
-            <span className="meta-pill meta-pill--accent">Local-first</span>
-            <span className="meta-pill">KST calendar</span>
-            <span className="meta-pill">JSON / CSV</span>
+            <span className="meta-pill meta-pill--accent">Overtime-first</span>
+            <span className="meta-pill">Desktop PWA</span>
+            <span className="meta-pill">Local-first</span>
           </div>
           <h1>PayClock</h1>
           <p className="hero-description">
-            월별 근무 기록과 추가수당 계산을 한 화면에서 정리합니다. 데이터는 이 브라우저에만 저장됩니다.
+            추가수당 흐름과 오늘 근무 상태를 한 화면에서 관리합니다. 데이터는 이 브라우저와 설치형 앱 안에만 저장됩니다.
           </p>
-          <div className="hero-highlights">
-            <article className="hero-highlight">
-              <span>This month</span>
-              <strong>{currency(model.monthSummary.totalPay)}</strong>
-              <p>{hours(model.monthSummary.totalPremiumOvertimeHours)} 1.5배 대상</p>
-            </article>
-            <article className="hero-highlight">
-              <span>Required</span>
-              <strong>{wholeHours(model.monthSummary.requiredHours)}</strong>
-              <p>{requiredHoursSubtitle(model.monthSummary)}</p>
-            </article>
-            <article className="hero-highlight">
-              <span>Storage</span>
-              <strong>Local only</strong>
-              <p>JSON / CSV 백업</p>
-            </article>
-          </div>
-          <div className="hero-actions">
-            <button type="button" className="primary-button" onClick={openImportPicker}>
-              데이터 불러오기
-            </button>
-            {installPrompt.canInstall ? (
-              <button type="button" className="ghost-button ghost-button--install" onClick={() => void installPrompt.installApp()}>
-                앱 설치
-              </button>
-            ) : null}
-            <button type="button" className="ghost-button" onClick={model.goToToday}>
-              오늘로 이동
-            </button>
-          </div>
         </div>
-
-        <section className="live-card" aria-label="실시간 추가 금액">
-          <div className="live-card__header">
-            <div>
-              <p className="live-card__label">Live tally</p>
-              <strong className="live-card__value" data-testid="live-pay">
-                {currency(model.liveBreakdown.totalPay)}
-              </strong>
-            </div>
-            <span className={`live-card__badge ${model.liveBreakdown.isLive ? 'is-live' : ''}`}>
-              {model.liveBreakdown.isLive ? 'Tracking now' : 'Today snapshot'}
-            </span>
-          </div>
-          <p className="live-card__subtext">
-            {model.liveBreakdown.isLive
-              ? '실시간 진행 중인 근무를 반영해 추가 금액을 계속 갱신합니다.'
-              : '오늘 기준 추가 금액을 빠르게 확인할 수 있습니다.'}
-          </p>
-          <p className="live-card__context">
-            {dayLabel(model.selectedDate)} · {selectedRecord.isRunning ? '실시간 진행 중' : selectedStatusLabel}
-          </p>
-          <div className="live-card__stats">
-            <article className="live-card__stat">
-              <span>This month</span>
-              <strong>{currency(model.monthSummary.totalPay)}</strong>
-            </article>
-            <article className="live-card__stat">
-              <span>Selected pay</span>
-              <strong>{currency(occurrenceSelectedBreakdown.totalPay)}</strong>
-            </article>
-            <article className="live-card__stat">
-              <span>Premium line</span>
-              <strong>{premiumStartDisplayValue(occurrenceSelectedBreakdown, model.monthSummary)}</strong>
-            </article>
-          </div>
-        </section>
+        <div className="masthead__actions">
+          <button type="button" className="primary-button" onClick={openImportPicker}>
+            데이터 불러오기
+          </button>
+          {installPrompt.canInstall ? (
+            <button type="button" className="ghost-button ghost-button--install" onClick={() => void installPrompt.installApp()}>
+              앱 설치
+            </button>
+          ) : null}
+          <button type="button" className="ghost-button" onClick={model.goToToday}>
+            오늘로 이동
+          </button>
+        </div>
       </header>
 
       {model.errorMessage ? (
@@ -149,7 +244,11 @@ function App() {
         </aside>
       ) : null}
 
-      <main className="layout-grid">
+      {isSingleColumnLayout ? todayConsoleSection : null}
+
+      <main className="dashboard-grid">
+        {isSingleColumnLayout ? null : todayConsoleSection}
+
         <section className="surface summary-grid" aria-label="이번 달 요약">
           <SectionHeader
             title="이번 달 요약"
@@ -192,6 +291,7 @@ function App() {
               subtitle={workedProgressSubtitle(model.displayMonthSummary)}
             />
           </div>
+          <p className="hint-text summary-grid__hint">달력과 오늘 근무 콘솔은 항상 발생 기준으로 보여주고, 토글은 요약/선택일 상세에만 적용됩니다.</p>
           {model.displayMonthSummary.exceedsMonthlyCap ? (
             <p className="warning-text">월 최대 근무 가능 시간을 넘겼습니다. 입력은 유지되지만 확인이 필요합니다.</p>
           ) : null}
@@ -212,108 +312,59 @@ function App() {
               </button>
             </div>
           </div>
+          <p className="calendar-scroll-hint">좁은 화면에서는 달력을 좌우로 스크롤해 날짜를 확인할 수 있습니다.</p>
 
-          <div className="weekday-row" aria-hidden="true">
-            {weekdaySymbols.map((symbol, index) => (
-              <span key={symbol} className={`weekday weekday--${weekdayTone(index)}`}>
-                {symbol}
-              </span>
-            ))}
-          </div>
-
-          <div className="calendar-grid">
-            {Array.from({ length: firstWeekdayOffset(model.selectedMonth) }).map((_, index) => (
-              <span key={`blank-${index}`} className="calendar-blank" />
-            ))}
-
-            {dates.map((dayKey) => {
-              const breakdown = model.dayMap.get(dayKey) ?? emptyBreakdown(dayKey, model.recordFor(dayKey).status)
-              const record = model.recordFor(dayKey)
-              const isSelected = dayKey === model.selectedDate
-
-              return (
-                <button
-                  key={dayKey}
-                  type="button"
-                  className={`calendar-cell calendar-cell--${breakdown.status} ${isSelected ? 'is-selected' : ''}`}
-                  onClick={() => model.selectDate(dayKey)}
-                  data-testid={`day-cell-${dayKey}`}
-                >
-                  <span className="calendar-cell__top">
-                    <span className={`calendar-cell__day calendar-cell__day--${weekdayTone(weekdayIndex(dayKey))}`}>
-                      {dayNumber(dayKey)}
-                    </span>
-                    {record.isRunning ? <span className="live-dot" aria-label="실시간 진행 중" /> : null}
-                  </span>
-                  <span className="calendar-cell__caption">{captionForBreakdown(breakdown)}</span>
-                  <strong className="calendar-cell__pay">{currency(breakdown.totalPay)}</strong>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="surface settings-surface">
-          <SectionHeader
-            title="설정"
-            subtitle={isSettingsExpanded ? '민감한 값은 필요할 때만 열어 확인합니다' : ''}
-            action={
-              <button
-                type="button"
-                className="chip-button"
-                aria-expanded={isSettingsExpanded}
-                aria-controls="settings-content"
-                onClick={() => setIsSettingsExpanded((current) => !current)}
-              >
-                {isSettingsExpanded ? '설정 숨기기' : '설정 보기'}
-              </button>
-            }
-          />
-          {isSettingsExpanded ? (
-            <div id="settings-content">
-              <div className="field-grid">
-                <label className="field">
-                  <span>시급</span>
-                  <input
-                    type="number"
-                    min={0}
-                    aria-label="시급"
-                    value={model.data.settings.hourlyRate}
-                    onChange={(event) => model.setHourlyRate(Number(event.target.value || 0))}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>1.5배 기준 추가 시간</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    aria-label="1.5배 기준 추가 시간"
-                    value={model.data.settings.premiumThresholdHours}
-                    onChange={(event) => model.setPremiumThresholdHours(Number(event.target.value || 0))}
-                  />
-                </label>
-              </div>
-
-              <div className="field-grid">
-                <label className="field">
-                  <span>실시간 갱신 주기(초)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    aria-label="실시간 갱신 주기"
-                    value={model.data.settings.refreshIntervalSeconds}
-                    onChange={(event) => model.setRefreshIntervalSeconds(Number(event.target.value || 1))}
-                  />
-                </label>
-              </div>
+          <div className="calendar-scroll-area">
+            <div className="weekday-row" aria-hidden="true">
+              {weekdaySymbols.map((symbol, index) => (
+                <span key={symbol} className={`weekday weekday--${weekdayTone(index)}`}>
+                  {symbol}
+                </span>
+              ))}
             </div>
-          ) : null}
+
+            <div className="calendar-grid">
+              {Array.from({ length: firstWeekdayOffset(model.selectedMonth) }).map((_, index) => (
+                <span key={`blank-${index}`} className="calendar-blank" />
+              ))}
+
+              {dates.map((dayKey) => {
+                const breakdown = model.dayMap.get(dayKey) ?? emptyBreakdown(dayKey, model.recordFor(dayKey).status)
+                const record = model.recordFor(dayKey)
+                const isSelected = dayKey === model.selectedDate
+                const isToday = dayKey === model.todayKey
+
+                return (
+                  <button
+                    key={dayKey}
+                    type="button"
+                    className={`calendar-cell calendar-cell--${breakdown.status} ${isSelected ? 'is-selected' : ''} ${isToday ? 'is-today' : ''}`}
+                    onClick={() => model.selectDate(dayKey)}
+                    data-testid={`day-cell-${dayKey}`}
+                  >
+                    <span className="calendar-cell__top">
+                      <span className={`calendar-cell__day calendar-cell__day--${weekdayTone(weekdayIndex(dayKey))}`}>
+                        {dayNumber(dayKey)}
+                      </span>
+                      <span className="calendar-cell__markers">
+                        {isToday ? <span className="calendar-pill">오늘</span> : null}
+                        {record.isRunning ? <span className="live-dot" aria-label="실시간 진행 중" /> : null}
+                      </span>
+                    </span>
+                    <span className="calendar-cell__caption">{captionForBreakdown(breakdown)}</span>
+                    <strong className="calendar-cell__pay">{currency(breakdown.totalPay)}</strong>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </section>
 
         <section className="surface editor-surface">
-          <SectionHeader title="선택한 날짜" subtitle={dayLabel(model.selectedDate)} />
+          <SectionHeader
+            title="선택한 날짜"
+            subtitle={`${dayLabel(model.selectedDate)} · ${selectedStatusLabel}${model.isSelectedDateToday ? ' · 오늘 근무 패널과 동기화' : ''}`}
+          />
           <div className="metrics-row">
             <MetricCard title="추가 금액" value={currency(displaySelectedBreakdown.totalPay)} />
             <MetricCard title="실근무" value={hoursFromSeconds(displaySelectedBreakdown.netWorkedSeconds)} />
@@ -535,8 +586,69 @@ function App() {
           </div>
         </section>
 
-        <section className="surface data-surface">
-          <SectionHeader title="데이터" subtitle="브라우저 로컬 저장소에만 저장됩니다" />
+        <section className="surface settings-surface">
+          <SectionHeader
+            title="설정"
+            subtitle={isSettingsExpanded ? '민감한 값은 펼쳤을 때만 표시합니다' : '민감한 설정값은 기본 화면에서 숨겨집니다'}
+            action={
+              <button
+                type="button"
+                className="chip-button"
+                aria-expanded={isSettingsExpanded}
+                aria-controls="settings-content"
+                onClick={() => setIsSettingsExpanded((current) => !current)}
+              >
+                {isSettingsExpanded ? '설정 숨기기' : '설정 보기'}
+              </button>
+            }
+          />
+          {isSettingsExpanded ? (
+            <div id="settings-content">
+              <div className="field-grid">
+                <label className="field">
+                  <span>시급</span>
+                  <input
+                    type="number"
+                    min={0}
+                    aria-label="시급"
+                    value={model.data.settings.hourlyRate}
+                    onChange={(event) => model.setHourlyRate(Number(event.target.value || 0))}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>1.5배 기준 추가 시간</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    aria-label="1.5배 기준 추가 시간"
+                    value={model.data.settings.premiumThresholdHours}
+                    onChange={(event) => model.setPremiumThresholdHours(Number(event.target.value || 0))}
+                  />
+                </label>
+              </div>
+
+              <div className="field-grid">
+                <label className="field">
+                  <span>실시간 갱신 주기(초)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label="실시간 갱신 주기"
+                    value={model.data.settings.refreshIntervalSeconds}
+                    onChange={(event) => model.setRefreshIntervalSeconds(Number(event.target.value || 1))}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : (
+            <p className="hint-text">시급, 추가 기준 시간, 실시간 갱신 주기는 개인정보로 간주해 기본 화면에 직접 표시하지 않습니다.</p>
+          )}
+        </section>
+
+        <section ref={dataSectionRef} className="surface data-surface">
+          <SectionHeader title="데이터" subtitle="브라우저 로컬 저장소와 설치형 앱 안에만 저장됩니다" />
           <div className="button-row">
             <button type="button" className="primary-button" onClick={model.exportJSON}>
               JSON 내보내기
@@ -556,7 +668,8 @@ function App() {
             className="sr-only"
           />
           <p className="hint-text">
-            JSON 불러오기는 현재 데이터를 덮어쓰고, CSV 불러오기는 같은 날짜일 때 가져온 값이 우선합니다.
+            JSON 불러오기는 현재 데이터를 모두 덮어쓰고, CSV는 같은 날짜일 때 가져온 값이 우선합니다. 설치형 앱에서는 `.json`/`.csv`
+            파일을 직접 열어 바로 가져올 수 있습니다.
           </p>
         </section>
       </main>
@@ -636,6 +749,67 @@ function MetricCard({ title, value }: { title: string; value: string }) {
       <p className="metric-card__title">{title}</p>
       <strong className="metric-card__value">{value}</strong>
     </article>
+  )
+}
+
+function TodayStat({ title, value }: { title: string; value: string }) {
+  return (
+    <article className="today-stat">
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </article>
+  )
+}
+
+function TodayTimeline({ timeline }: { timeline: ShiftTimeline }) {
+  return (
+    <div className="shift-timeline">
+      <div className="shift-timeline__summary">
+        <div className="shift-timeline__summary-item shift-timeline__summary-item--start">
+          <span>시작 시각</span>
+          <strong>{timeline.startLabel}</strong>
+        </div>
+        <div className="shift-timeline__summary-item shift-timeline__summary-item--end">
+          <span>{timeline.endTitle}</span>
+          <strong>{timeline.endLabel}</strong>
+        </div>
+      </div>
+
+      <div className="shift-timeline__track">
+        <div className="shift-timeline__rail">
+          {timeline.markers.map((marker) => (
+            <span
+              key={marker.label}
+              className={`shift-timeline__marker shift-timeline__marker--${marker.tone}`}
+              style={{ left: `${marker.position}%` }}
+            />
+          ))}
+        </div>
+        <div className="shift-timeline__labels">
+          <span>{timeline.startLabel}</span>
+          <span>{timeline.endLabel}</span>
+        </div>
+      </div>
+
+      <div className="shift-timeline__legend">
+        {timeline.markers.map((marker) => (
+          <span key={`${marker.label}-legend`} className={`timeline-legend timeline-legend--${marker.tone}`}>
+            {marker.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="timeline-note-row">
+        <div className="timeline-note">
+          <span>점심 선차감</span>
+          <strong>{timeline.lunchLabel}</strong>
+        </div>
+        <div className="timeline-note">
+          <span>기타 제외</span>
+          <strong>{timeline.extraExcludedLabel}</strong>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -780,12 +954,176 @@ function recommendedLunchBreakMinutes(record: DayRecord, nowTimestamp: number): 
   return automaticLunchBreakMinutes((shiftEndTimestamp - shiftStartTimestamp) / 1_000)
 }
 
+function projectedExtensionValue(
+  projectedBreakdown: DayPayBreakdown | null,
+  currentBreakdown: DayPayBreakdown,
+  record: DayRecord,
+): string {
+  if (projectedBreakdown === null) {
+    return record.isRunning ? '계산 대기' : '진행 중일 때 표시'
+  }
+
+  return `+${currency(Math.max(0, projectedBreakdown.totalPay - currentBreakdown.totalPay))}`
+}
+
+function premiumProgressSummary(record: DayRecord, breakdown: DayPayBreakdown, nowTimestamp: number) {
+  if (record.status !== 'work' || record.startMinute === null) {
+    return {
+      value: '근무 시작 필요',
+      secondary: '출근 시작 후 계산',
+      description: '오늘 근무를 시작하면 추가수당 시작 시각과 남은 시간을 바로 계산합니다.',
+    }
+  }
+
+  if (breakdown.premiumStartTimestamp === null) {
+    return {
+      value: '계산 대기',
+      secondary: '시작시간 입력 필요',
+      description: '시작시간과 휴게 차감 규칙이 정해지면 추가수당 시작 시점을 계산합니다.',
+    }
+  }
+
+  const remainingMinutes = Math.ceil((breakdown.premiumStartTimestamp - nowTimestamp) / (60 * 1_000))
+  if (record.isRunning && remainingMinutes > 0) {
+    return {
+      value: durationText(remainingMinutes),
+      secondary: `${premiumStartText(breakdown.premiumStartTimestamp, breakdown.dayKey)}부터 추가수당 시작`,
+      description: `${durationText(remainingMinutes)} 뒤에 추가수당 구간에 진입합니다.`,
+    }
+  }
+
+  if (record.isRunning) {
+    return {
+      value: '진입 완료',
+      secondary: `${premiumStartText(breakdown.premiumStartTimestamp, breakdown.dayKey)}부터 적용 중`,
+      description: '현재 추가수당 구간을 실시간으로 계산 중입니다.',
+    }
+  }
+
+  return {
+    value: premiumStartText(breakdown.premiumStartTimestamp, breakdown.dayKey),
+    secondary: '오늘 기록 기준',
+    description: '기록된 근무시간 기준으로 추가수당이 시작되는 시각입니다.',
+  }
+}
+
 function workedProgressValue(summary: ReturnType<typeof useAppModel>['monthSummary']): string {
   return `${hours(summary.totalNetWorkedHours)} / ${hours(summary.recommendedHoursToDate)}`
 }
 
 function workedProgressSubtitle(summary: ReturnType<typeof useAppModel>['monthSummary']): string {
   return `실근무 / 기준일까지 권장근무 · 유효 근무일 ${summary.recommendedWorkdaysElapsed}일`
+}
+
+interface ShiftTimeline {
+  startLabel: string
+  endTitle: string
+  endLabel: string
+  lunchLabel: string
+  extraExcludedLabel: string
+  markers: Array<{
+    label: string
+    position: number
+    tone: 'start' | 'premium' | 'night' | 'end'
+  }>
+}
+
+function timelineForRecord(record: DayRecord, breakdown: DayPayBreakdown, nowTimestamp: number): ShiftTimeline | null {
+  if (record.status !== 'work' || record.startMinute === null) {
+    return null
+  }
+
+  const shiftStartTimestamp = combineDayAndMinutes(record.dayKey, record.startMinute)
+  const shiftEndTimestamp = resolveShiftEndTimestamp(record, nowTimestamp)
+  if (shiftEndTimestamp === null || shiftEndTimestamp <= shiftStartTimestamp) {
+    return null
+  }
+
+  const totalSpan = Math.max(1, shiftEndTimestamp - shiftStartTimestamp)
+  const markers: ShiftTimeline['markers'] = [
+    {
+      label: `시작 ${clockText(record.startMinute)}`,
+      position: 0,
+      tone: 'start',
+    },
+  ]
+
+  if (breakdown.premiumStartTimestamp !== null) {
+    markers.push({
+      label: `추가수당 ${premiumStartText(breakdown.premiumStartTimestamp, record.dayKey)}`,
+      position: clampPercent(((breakdown.premiumStartTimestamp - shiftStartTimestamp) / totalSpan) * 100),
+      tone: 'premium',
+    })
+  }
+
+  if (record.nightPremiumEnabled) {
+    const nightTimestamp = combineDayAndMinutes(record.dayKey, 22 * 60)
+    if (nightTimestamp >= shiftStartTimestamp && nightTimestamp <= shiftEndTimestamp) {
+      markers.push({
+        label: '22:00 이후 가산',
+        position: clampPercent(((nightTimestamp - shiftStartTimestamp) / totalSpan) * 100),
+        tone: 'night',
+      })
+    }
+  }
+
+  markers.push({
+    label: `${record.isRunning ? '현재' : '종료'} ${clockText(minutesForTimestampLabel(shiftEndTimestamp))}`,
+    position: 100,
+    tone: 'end',
+  })
+
+  return {
+    startLabel: clockText(record.startMinute),
+    endTitle: record.isRunning ? '현재 시각' : '종료 시각',
+    endLabel: record.isRunning ? `현재 ${clockText(minutesForTimestampLabel(shiftEndTimestamp))}` : premiumStartText(shiftEndTimestamp, record.dayKey),
+    lunchLabel: durationText(breakdown.autoBreakMinutes),
+    extraExcludedLabel: durationText(record.extraExcludedMinutes),
+    markers,
+  }
+}
+
+function resolveShiftEndTimestamp(record: DayRecord, nowTimestamp: number): number | null {
+  if (record.startMinute === null) {
+    return null
+  }
+
+  const shiftStartTimestamp = combineDayAndMinutes(record.dayKey, record.startMinute)
+  if (record.isRunning) {
+    return Math.max(nowTimestamp, shiftStartTimestamp)
+  }
+
+  if (record.endMinute === null) {
+    return null
+  }
+
+  return combineDayAndMinutes(record.dayKey, record.endMinute, record.endsNextDay)
+}
+
+function minutesForTimestampLabel(timestamp: number): number {
+  const date = new Date(timestamp)
+  return date.getUTCHours() * 60 + date.getUTCMinutes()
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value))
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query)
+    const updateMatch = () => setMatches(mediaQuery.matches)
+
+    updateMatch()
+    mediaQuery.addEventListener('change', updateMatch)
+    return () => {
+      mediaQuery.removeEventListener('change', updateMatch)
+    }
+  }, [query])
+
+  return matches
 }
 
 function emptyBreakdown(dayKey: string, status: DayPayBreakdown['status']): DayPayBreakdown {

@@ -75,7 +75,7 @@ describe('App', () => {
     })
   })
 
-  it('keeps the live card premium line aligned with the selected day', async () => {
+  it('keeps the today console anchored to today while selected-day summary changes', async () => {
     const originalLocalStorage = window.localStorage
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
@@ -115,7 +115,8 @@ describe('App', () => {
 
       const initialSummaryValue = summaryCardValue('1.5배 시작선')
       expect(initialSummaryValue).toBe('9.2시간')
-      expect(liveCardStatValue('Premium line')).toBe(initialSummaryValue)
+      expect(todayStatValue('추가수당 시작')).toBe('18:09')
+      expect(screen.getByText('8월 4일 화요일 · 근무')).toBeInTheDocument()
       expect(summaryCardValue('총 실근무')).toBe('4.0시간 / 16.0시간')
 
       fireEvent.click(screen.getByTestId('day-cell-2026-08-05'))
@@ -123,7 +124,8 @@ describe('App', () => {
       const updatedSummaryValue = summaryCardValue('1.5배 시작선')
       expect(updatedSummaryValue).toBe('9.4시간')
       expect(updatedSummaryValue).not.toBe(initialSummaryValue)
-      expect(liveCardStatValue('Premium line')).toBe(updatedSummaryValue)
+      expect(todayStatValue('추가수당 시작')).toBe('18:09')
+      expect(screen.getByText('8월 4일 화요일 · 근무')).toBeInTheDocument()
       expect(summaryCardSubtitle('1.5배 시작선')).toBe('선택일 기준 · 필수 8.0시간 + 추가 기준 분배 0.7시간 + 이월 0.7시간')
       expect(summaryCardSubtitle('총 실근무')).toBe('실근무 / 기준일까지 권장근무 · 유효 근무일 2일')
     } finally {
@@ -135,7 +137,7 @@ describe('App', () => {
     }
   })
 
-  it('shows the premium line as unavailable on non-work selected days', () => {
+  it('shows work-required guidance in the today console on non-work days', () => {
     const originalLocalStorage = window.localStorage
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
@@ -175,7 +177,8 @@ describe('App', () => {
 
       expect(summaryCardValue('1.5배 시작선')).toBe('적용 안 함')
       expect(summaryCardSubtitle('1.5배 시작선')).toBe('연차 · 근무 상태에서만 계산됩니다')
-      expect(liveCardStatValue('Premium line')).toBe('적용 안 함')
+      expect(todayStatValue('추가수당 시작')).toBe('근무 시작 필요')
+      expect(screen.getByText('8월 4일 화요일 · 연차')).toBeInTheDocument()
     } finally {
       Object.defineProperty(window, 'localStorage', {
         value: originalLocalStorage,
@@ -185,7 +188,7 @@ describe('App', () => {
     }
   })
 
-  it('switches summary and selected-day detail between occurrence and settlement while live card stays on occurrence', () => {
+  it('switches summary and selected-day detail between occurrence and settlement while the today console stays on occurrence', () => {
     const originalLocalStorage = window.localStorage
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
@@ -239,7 +242,7 @@ describe('App', () => {
       expect(summaryCardValue('1.5배 시작선')).toBe('8.7시간')
       expect(summaryCardSubtitle('총 추가 금액')).toBe('1.5배 대상 2.1시간 · 심야 가산 0.8시간')
       expect(metricCardValue('추가 금액')).toBe('₩195')
-      expect(liveCardStatValue('Selected pay')).toBe('₩195')
+      expect(screen.getByTestId('live-pay')).toHaveTextContent('₩195')
 
       fireEvent.click(screen.getByRole('button', { name: '정산 기준' }))
 
@@ -247,7 +250,8 @@ describe('App', () => {
       expect(summaryCardSubtitle('1.5배 시작선')).toBe('정산 기준 · 기준일까지 누적 실근무로 재계산')
       expect(summaryCardSubtitle('총 추가 금액')).toBe('1.5배 대상 2.1시간 · 심야 가산 1.5시간')
       expect(metricCardValue('추가 금액')).toBe('₩90')
-      expect(liveCardStatValue('Selected pay')).toBe('₩195')
+      expect(screen.getByTestId('live-pay')).toHaveTextContent('₩195')
+      expect(todayStatValue('이번 달 누적')).toBe('₩355')
     } finally {
       Object.defineProperty(window, 'localStorage', {
         value: originalLocalStorage,
@@ -286,6 +290,37 @@ describe('App', () => {
       vi.useRealTimers()
     }
   })
+
+  it('starts and stops today work from the quick action buttons', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T00:15:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+
+      render(<App />)
+
+      fireEvent.click(screen.getByRole('button', { name: '출근 시작' }))
+
+      expect(screen.getByText('8월 4일 화요일 · 실시간 진행 중')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '근무 종료' })).toBeEnabled()
+
+      fireEvent.click(screen.getByRole('button', { name: '근무 종료' }))
+
+      expect(screen.queryByText('8월 4일 화요일 · 실시간 진행 중')).not.toBeInTheDocument()
+      expect(window.localStorage.getItem('payclock:data:v1')).toContain('"endMinute": 555')
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
+  })
 })
 
 function summaryCardValue(title: string): string {
@@ -306,8 +341,11 @@ function summaryCardSubtitle(title: string): string {
   return subtitle as string
 }
 
-function liveCardStatValue(label: string): string {
-  const stat = screen.getByText(label).closest('article')
+function todayStatValue(label: string): string {
+  const stat = screen
+    .getAllByText(label)
+    .map((candidate) => candidate.closest('article'))
+    .find((candidate) => candidate?.classList.contains('today-stat'))
   expect(stat).not.toBeNull()
 
   const value = stat?.querySelector('strong')?.textContent
