@@ -12,15 +12,16 @@ import {
   premiumStartText,
   wholeHours,
 } from './app/formatters'
-import { useAppBadge } from './app/useAppBadge'
 import { useInstallPrompt } from './app/useInstallPrompt'
 import { useLaunchQueueImport } from './app/useLaunchQueueImport'
+import { type ThemePreference, useThemePreference } from './app/useThemePreference'
 import { useWakeLock } from './app/useWakeLock'
 import { useAppModel } from './app/useAppModel'
 import { automaticLunchBreakMinutes } from './domain/payCalculator'
 import { dayStatusDisplayName, type DayPayBreakdown, type DayRecord, type DayStatus, type PremiumCalculationMode } from './domain/models'
 import {
   combineDayAndMinutes,
+  dayKeyFromTimestamp,
   datesInMonth,
   firstWeekdayOffset,
   weekdayIndex,
@@ -29,10 +30,18 @@ import {
 const weekdaySymbols = ['일', '월', '화', '수', '목', '금', '토']
 const quickExcludedValues = [0, 30, 60, 90]
 const todayStatusActions: DayStatus[] = ['annualLeave', 'businessTrip', 'off']
+const shiftTimelineAxis = [
+  { label: '00:00', position: 0, align: 'start' as const },
+  { label: '06:00', position: 25, align: 'center' as const },
+  { label: '12:00', position: 50, align: 'center' as const },
+  { label: '18:00', position: 75, align: 'center' as const },
+  { label: '24:00', position: 100, align: 'end' as const },
+]
 
 function App() {
   const model = useAppModel()
   const installPrompt = useInstallPrompt()
+  const theme = useThemePreference()
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const dataSectionRef = useRef<HTMLElement | null>(null)
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false)
@@ -50,8 +59,22 @@ function App() {
   const todayConsoleTitle = model.activeRunningDayKey && model.activeRunningDayKey !== model.todayKey ? '진행 중 근무' : '오늘 근무'
 
   useWakeLock(model.activeRunningDayKey !== null)
-  useAppBadge(model.activeRunningDayKey !== null)
   useLaunchQueueImport(model.importFile)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const navigatorWithBadging = window.navigator as Navigator & {
+      clearAppBadge?: () => Promise<void> | void
+    }
+
+    const maybePromise = navigatorWithBadging.clearAppBadge?.()
+    if (maybePromise && typeof maybePromise.catch === 'function') {
+      void maybePromise.catch(() => undefined)
+    }
+  }, [])
 
   function openImportPicker() {
     importInputRef.current?.click()
@@ -221,6 +244,7 @@ function App() {
           </p>
         </div>
         <div className="masthead__actions">
+          <ThemeControl value={theme.themePreference} onChange={theme.setThemePreference} />
           <button type="button" className="primary-button" onClick={openImportPicker}>
             데이터 불러오기
           </button>
@@ -733,6 +757,40 @@ function PremiumModeControl({
   )
 }
 
+function ThemeControl({
+  value,
+  onChange,
+}: {
+  value: ThemePreference
+  onChange: (value: ThemePreference) => void
+}) {
+  return (
+    <div className="segmented-control segmented-control--compact" role="group" aria-label="화면 테마">
+      <button
+        type="button"
+        className={`segmented-control__button ${value === 'system' ? 'is-active' : ''}`}
+        onClick={() => onChange('system')}
+      >
+        시스템
+      </button>
+      <button
+        type="button"
+        className={`segmented-control__button ${value === 'light' ? 'is-active' : ''}`}
+        onClick={() => onChange('light')}
+      >
+        라이트
+      </button>
+      <button
+        type="button"
+        className={`segmented-control__button ${value === 'dark' ? 'is-active' : ''}`}
+        onClick={() => onChange('dark')}
+      >
+        다크
+      </button>
+    </div>
+  )
+}
+
 function SummaryCard({ title, value, subtitle }: { title: string; value: string; subtitle: string }) {
   return (
     <article className="summary-card">
@@ -776,7 +834,23 @@ function TodayTimeline({ timeline }: { timeline: ShiftTimeline }) {
       </div>
 
       <div className="shift-timeline__track">
-        <div className="shift-timeline__rail">
+        <div className="shift-timeline__rail" aria-label="00:00부터 24:00까지 시간 축">
+          {shiftTimelineAxis.map((tick) => (
+            <span
+              key={`${tick.label}-tick`}
+              className={`shift-timeline__tick shift-timeline__tick--align-${tick.align}`}
+              style={{ left: `${tick.position}%` }}
+              aria-hidden="true"
+            />
+          ))}
+          <span
+            className={`shift-timeline__work-span ${timeline.workSpan.isRunning ? 'is-live' : ''} ${timeline.workSpan.overflowsNextDay ? 'is-overflowing' : ''}`}
+            style={{
+              left: `${timeline.workSpan.startPosition}%`,
+              width: `${Math.max(0, timeline.workSpan.endPosition - timeline.workSpan.startPosition)}%`,
+            }}
+            aria-hidden="true"
+          />
           {timeline.markers.map((marker) => (
             <span
               key={`${marker.label}-${marker.position}`}
@@ -785,6 +859,7 @@ function TodayTimeline({ timeline }: { timeline: ShiftTimeline }) {
                 `shift-timeline__marker--${marker.tone}`,
                 `shift-timeline__marker--${marker.shape}`,
                 `shift-timeline__marker--align-${marker.align}`,
+                marker.overflowsNextDay ? 'shift-timeline__marker--overflow-next-day' : '',
               ].join(' ')}
               style={{ left: `${marker.position}%` }}
               title={marker.label}
@@ -792,8 +867,15 @@ function TodayTimeline({ timeline }: { timeline: ShiftTimeline }) {
           ))}
         </div>
         <div className="shift-timeline__labels">
-          <span>{timeline.startLabel}</span>
-          <span>{timeline.endLabel}</span>
+          {shiftTimelineAxis.map((tick) => (
+            <span
+              key={tick.label}
+              className={`shift-timeline__axis-label shift-timeline__axis-label--align-${tick.align}`}
+              style={{ left: `${tick.position}%` }}
+            >
+              {tick.label}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -1027,12 +1109,19 @@ interface ShiftTimeline {
   endLabel: string
   lunchLabel: string
   extraExcludedLabel: string
+  workSpan: {
+    startPosition: number
+    endPosition: number
+    overflowsNextDay: boolean
+    isRunning: boolean
+  }
   markers: Array<{
     label: string
     position: number
     tone: 'start' | 'premium' | 'night' | 'current' | 'end'
     shape: 'dot' | 'bar'
     align: 'start' | 'center' | 'end'
+    overflowsNextDay: boolean
   }>
 }
 
@@ -1047,56 +1136,68 @@ function timelineForRecord(record: DayRecord, breakdown: DayPayBreakdown, nowTim
     return null
   }
 
-  const totalSpan = Math.max(1, shiftEndTimestamp - shiftStartTimestamp)
+  const startPosition = positionForMinute(record.startMinute)
+  const endPoint = timelinePointForTimestamp(shiftEndTimestamp, record.dayKey)
   const markers: ShiftTimeline['markers'] = [
     {
       label: `시작 ${clockText(record.startMinute)}`,
-      position: 0,
+      position: startPosition,
       tone: 'start',
       shape: 'bar',
-      align: 'start',
+      align: markerAlignForPosition(startPosition),
+      overflowsNextDay: false,
     },
   ]
 
   if (breakdown.premiumStartTimestamp !== null) {
-    const position = clampPercent(((breakdown.premiumStartTimestamp - shiftStartTimestamp) / totalSpan) * 100)
+    const premiumPoint = timelinePointForTimestamp(breakdown.premiumStartTimestamp, record.dayKey)
     markers.push({
       label: `추가수당 ${premiumStartText(breakdown.premiumStartTimestamp, record.dayKey)}`,
-      position,
+      position: premiumPoint.position,
       tone: 'premium',
       shape: 'dot',
-      align: markerAlignForPosition(position),
+      align: markerAlignForPosition(premiumPoint.position),
+      overflowsNextDay: premiumPoint.overflowsNextDay,
     })
   }
 
   if (record.nightPremiumEnabled) {
     const nightTimestamp = combineDayAndMinutes(record.dayKey, 22 * 60)
     if (nightTimestamp >= shiftStartTimestamp && nightTimestamp <= shiftEndTimestamp) {
-      const position = clampPercent(((nightTimestamp - shiftStartTimestamp) / totalSpan) * 100)
+      const nightPoint = timelinePointForTimestamp(nightTimestamp, record.dayKey)
       markers.push({
         label: '22:00 이후 가산',
-        position,
+        position: nightPoint.position,
         tone: 'night',
         shape: 'dot',
-        align: markerAlignForPosition(position),
+        align: markerAlignForPosition(nightPoint.position),
+        overflowsNextDay: false,
       })
     }
   }
 
+  const endMarkerLabel = `${record.isRunning ? '현재' : '종료'} ${premiumStartText(shiftEndTimestamp, record.dayKey)}`
   markers.push({
-    label: `${record.isRunning ? '현재' : '종료'} ${clockText(minutesForTimestampLabel(shiftEndTimestamp))}`,
-    position: 100,
+    label: endMarkerLabel,
+    position: endPoint.position,
     tone: record.isRunning ? 'current' : 'end',
     shape: 'bar',
-    align: 'end',
+    align: markerAlignForPosition(endPoint.position),
+    overflowsNextDay: endPoint.overflowsNextDay,
   })
 
   return {
     startLabel: clockText(record.startMinute),
     endTitle: record.isRunning ? '현재 시각' : '종료 시각',
-    endLabel: record.isRunning ? `현재 ${clockText(minutesForTimestampLabel(shiftEndTimestamp))}` : premiumStartText(shiftEndTimestamp, record.dayKey),
+    endLabel: record.isRunning ? `현재 ${premiumStartText(shiftEndTimestamp, record.dayKey)}` : premiumStartText(shiftEndTimestamp, record.dayKey),
     lunchLabel: durationText(breakdown.autoBreakMinutes),
     extraExcludedLabel: durationText(record.extraExcludedMinutes),
+    workSpan: {
+      startPosition,
+      endPosition: endPoint.position,
+      overflowsNextDay: endPoint.overflowsNextDay,
+      isRunning: record.isRunning,
+    },
     markers,
   }
 }
@@ -1118,13 +1219,22 @@ function resolveShiftEndTimestamp(record: DayRecord, nowTimestamp: number): numb
   return combineDayAndMinutes(record.dayKey, record.endMinute, record.endsNextDay)
 }
 
-function minutesForTimestampLabel(timestamp: number): number {
-  const date = new Date(timestamp)
-  return date.getUTCHours() * 60 + date.getUTCMinutes()
+function positionForMinute(minutes: number): number {
+  return normalizeTimelinePosition((minutes / (24 * 60)) * 100)
 }
 
-function clampPercent(value: number): number {
-  return Math.max(0, Math.min(100, value))
+function timelinePointForTimestamp(timestamp: number, baseDayKey: string) {
+  const dayStartTimestamp = combineDayAndMinutes(baseDayKey, 0)
+  const rawPosition = ((timestamp - dayStartTimestamp) / (24 * 60 * 60 * 1_000)) * 100
+
+  return {
+    position: normalizeTimelinePosition(rawPosition),
+    overflowsNextDay: dayKeyFromTimestamp(timestamp) !== baseDayKey,
+  }
+}
+
+function normalizeTimelinePosition(value: number): number {
+  return Number(Math.max(0, Math.min(100, value)).toFixed(3))
 }
 
 function markerAlignForPosition(position: number): 'start' | 'center' | 'end' {

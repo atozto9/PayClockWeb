@@ -14,3 +14,13 @@ test('loads and persists hourly rate locally', async ({ page }) => {
   await page.getByRole('button', { name: '설정 보기' }).click()
   await expect(page.getByLabel('시급')).toHaveValue('12345')
 })
+
+test('persists the selected theme locally', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: '다크' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+})

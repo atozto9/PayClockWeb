@@ -13,6 +13,20 @@
   --shadow-soft:
     0 24px 56px rgba(24, 40, 52, 0.11),
     0 8px 20px rgba(24, 40, 52, 0.05);
+  --body-overlay-start: rgba(255, 250, 242, 0.7);
+  --body-overlay-end: rgba(239, 228, 211, 0.96);
+  --background-grid-top-left: rgba(14, 139, 147, 0.16);
+  --background-grid-top-right: rgba(184, 100, 52, 0.16);
+  --background-grid-bottom: rgba(24, 40, 52, 0.08);
+  --background-grid-line: rgba(24, 40, 52, 0.045);
+  --surface-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.52), transparent 28%);
+  --button-surface-bg: rgba(255, 252, 247, 0.94);
+  --calendar-blank-bg: rgba(255, 252, 248, 0.38);
+  --calendar-cell-bg: rgba(255, 252, 248, 0.92);
+  --field-bg: rgba(255, 255, 255, 0.9);
+  --field-disabled-bg: rgba(241, 233, 223, 0.78);
+  --segmented-bg: rgba(255, 252, 247, 0.94);
+  --modal-backdrop: rgba(16, 31, 40, 0.48);
   --type-display: clamp(2.5rem, 5.8vw, 5rem);
   --type-section-title: clamp(1.45rem, 2.2vw, 1.9rem);
   --type-value-xl: clamp(2.7rem, 6.4vw, 4.75rem);
@@ -40,6 +54,7 @@
     'SUIT Variable',
     'Apple SD Gothic Neo',
     sans-serif;
+  color-scheme: light;
   color: var(--text-strong);
   background: var(--page-bg);
   font-family: var(--font-sans);
@@ -47,6 +62,35 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] {
+  --page-bg: #0f1a21;
+  --surface: rgba(24, 35, 43, 0.94);
+  --surface-soft: rgba(18, 29, 37, 0.94);
+  --text-strong: #edf2f5;
+  --text-muted: #a1b1ba;
+  --text-subtle: #8798a3;
+  --border-soft: rgba(232, 240, 244, 0.08);
+  --border-strong: rgba(232, 240, 244, 0.14);
+  --shadow-soft:
+    0 28px 64px rgba(0, 0, 0, 0.34),
+    0 10px 24px rgba(0, 0, 0, 0.18);
+  --body-overlay-start: rgba(18, 29, 37, 0.82);
+  --body-overlay-end: rgba(10, 19, 26, 0.96);
+  --background-grid-top-left: rgba(44, 169, 177, 0.18);
+  --background-grid-top-right: rgba(184, 100, 52, 0.16);
+  --background-grid-bottom: rgba(11, 93, 103, 0.16);
+  --background-grid-line: rgba(232, 240, 244, 0.04);
+  --surface-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 28%);
+  --button-surface-bg: rgba(24, 35, 43, 0.94);
+  --calendar-blank-bg: rgba(255, 255, 255, 0.03);
+  --calendar-cell-bg: rgba(20, 31, 39, 0.94);
+  --field-bg: rgba(13, 23, 30, 0.9);
+  --field-disabled-bg: rgba(19, 31, 39, 0.78);
+  --segmented-bg: rgba(19, 31, 39, 0.96);
+  --modal-backdrop: rgba(3, 8, 12, 0.72);
+  color-scheme: dark;
 }
 
 * {
@@ -64,7 +108,7 @@ body {
   font-size: var(--type-body);
   line-height: var(--leading-body);
   background:
-    linear-gradient(180deg, rgba(255, 250, 242, 0.7), rgba(239, 228, 211, 0.96)),
+    linear-gradient(180deg, var(--body-overlay-start), var(--body-overlay-end)),
     var(--page-bg);
 }
 

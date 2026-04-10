@@ -5,6 +5,47 @@ import App from './App'
 import { createMemoryStorage } from './domain/persistence'
 
 describe('App', () => {
+  it('uses the system theme by default and persists manual theme changes outside pay data', async () => {
+    const user = userEvent.setup()
+    const originalLocalStorage = window.localStorage
+    const matchMediaController = createMatchMediaController(true)
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+
+      const { unmount } = render(<App />)
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]')
+      expect(themeColorMeta).not.toBeNull()
+
+      expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+      expect(document.documentElement.style.colorScheme).toBe('dark')
+      expect(themeColorMeta as HTMLMetaElement).toHaveAttribute('content', '#122431')
+
+      await user.click(screen.getByRole('button', { name: '라이트' }))
+
+      expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+      expect(document.documentElement.style.colorScheme).toBe('light')
+      expect(themeColorMeta as HTMLMetaElement).toHaveAttribute('content', '#efe4d3')
+      expect(window.localStorage.getItem('payclock:ui:theme:v1')).toBe('light')
+      expect(window.localStorage.getItem('payclock:data:v1')).toBeNull()
+
+      unmount()
+      render(<App />)
+
+      expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+      expect(themeColorMeta as HTMLMetaElement).toHaveAttribute('content', '#efe4d3')
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      matchMediaController.restore()
+    }
+  })
+
   it('starts with a default hourly rate of 10,000 won', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -322,7 +363,27 @@ describe('App', () => {
     }
   })
 
-  it('renders the running-time marker as a bar in the overtime timeline', () => {
+  it('clears any legacy app badge once and does not set a new badge while tracking work', () => {
+    const setAppBadge = vi.fn()
+    const clearAppBadge = vi.fn()
+
+    Object.defineProperty(window.navigator, 'setAppBadge', {
+      value: setAppBadge,
+      configurable: true,
+    })
+    Object.defineProperty(window.navigator, 'clearAppBadge', {
+      value: clearAppBadge,
+      configurable: true,
+    })
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '출근 시작' }))
+
+    expect(setAppBadge).not.toHaveBeenCalled()
+    expect(clearAppBadge).toHaveBeenCalled()
+  })
+
+  it('renders the running-time marker at its 24-hour position in the overtime timeline', () => {
     const originalLocalStorage = window.localStorage
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-04T03:30:00.000Z'))
@@ -363,7 +424,61 @@ describe('App', () => {
       const currentMarker = screen.getByTitle('현재 12:30')
       expect(currentMarker).toHaveClass('shift-timeline__marker--current')
       expect(currentMarker).toHaveClass('shift-timeline__marker--bar')
-      expect(currentMarker).toHaveClass('shift-timeline__marker--align-end')
+      expect(currentMarker).toHaveClass('shift-timeline__marker--align-center')
+      expect(currentMarker).toHaveStyle({ left: '52.083%' })
+    } finally {
+      Object.defineProperty(window, 'localStorage', {
+        value: originalLocalStorage,
+        configurable: true,
+      })
+      vi.useRealTimers()
+    }
+  })
+
+  it('clamps overnight end markers to 24:00 and labels the next-day overflow', () => {
+    const originalLocalStorage = window.localStorage
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-04T00:00:00.000Z'))
+
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        value: createMemoryStorage(),
+        configurable: true,
+      })
+      window.localStorage.setItem(
+        'payclock:data:v1',
+        JSON.stringify({
+          settings: {
+            hourlyRate: 100,
+            premiumThresholdHours: 14,
+            refreshIntervalSeconds: 1,
+          },
+          records: [
+            {
+              id: 'aug-4-overnight',
+              dayKey: '2026-08-04',
+              status: 'work',
+              startMinute: 22 * 60 + 30,
+              endMinute: 70,
+              endsNextDay: true,
+              lunchBreakOverrideMinutes: null,
+              extraExcludedMinutes: 0,
+              nightPremiumEnabled: true,
+              note: '',
+              isRunning: false,
+            },
+          ],
+        }),
+      )
+
+      render(<App />)
+
+      const overnightEndMarker = screen.getByTitle('종료 다음날 01:10')
+      expect(overnightEndMarker).toHaveClass('shift-timeline__marker--end')
+      expect(overnightEndMarker).toHaveClass('shift-timeline__marker--overflow-next-day')
+      expect(overnightEndMarker).toHaveClass('shift-timeline__marker--align-end')
+      expect(overnightEndMarker).toHaveStyle({ left: '100%' })
+      expect(screen.getByText('다음날 01:10')).toBeInTheDocument()
     } finally {
       Object.defineProperty(window, 'localStorage', {
         value: originalLocalStorage,
@@ -411,4 +526,46 @@ function metricCardValue(title: string): string {
   const value = card?.querySelector('.metric-card__value')?.textContent
   expect(value).toBeTruthy()
   return value as string
+}
+
+function createMatchMediaController(initialMatches: boolean) {
+  const originalMatchMedia = window.matchMedia
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  const mediaQueryList = {
+    matches: initialMatches,
+    media: '(prefers-color-scheme: dark)',
+    onchange: null,
+    addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener)
+    }),
+    addListener: vi.fn((listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener)
+    }),
+    removeListener: vi.fn((listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener)
+    }),
+    dispatchEvent: vi.fn((event: MediaQueryListEvent) => {
+      listeners.forEach((listener) => listener(event))
+      return true
+    }),
+  } as unknown as MediaQueryList
+
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: vi.fn().mockImplementation(() => mediaQueryList),
+  })
+
+  return {
+    restore() {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      })
+    },
+  }
 }
